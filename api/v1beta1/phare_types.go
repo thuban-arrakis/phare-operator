@@ -17,30 +17,31 @@ limitations under the License.
 package v1beta1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  corev1 "k8s.io/api/core/v1"
+  metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // PhareSpec defines the desired state of Phare.
 type PhareSpec struct {
-	Microservice MicroserviceSpec  `json:"microservice"`
-	Service      map[string]string `json:"service"`
-	Config       map[string]string `json:"config"`
+  Microservice MicroserviceSpec  `json:"microservice"`
+  Service      ServiceSpec       `json:"service,omitempty"`
+  Config       map[string]string `json:"config,omitempty"`
 }
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroserviceSpec struct {
-	Name            string    `json:"name"`
-	Namespace       string    `json:"namespace"`
-	Kind            string    `json:"kind"`
-	ReplicaCount    int32     `json:"replicaCount"`
-	Image           ImageSpec `json:"image"`
-	ImagePullPolicy string    `json:"imagePullPolicy"`
+  Name            string    `json:"name"`
+  Namespace       string    `json:"namespace"`
+  Kind            string    `json:"kind"`
+  ReplicaCount    int32     `json:"replicaCount"`
+  Image           ImageSpec `json:"image"`
+  ImagePullPolicy string    `json:"imagePullPolicy"`
 }
 
 // ImageSpec holds information about the microservice's container image.
 type ImageSpec struct {
-	Repository string `json:"repository"`
-	Tag        string `json:"tag"`
+  Repository string `json:"repository"`
+  Tag        string `json:"tag"`
 }
 
 // PharePhase represents the phases of Phare processing.
@@ -48,25 +49,25 @@ type PharePhase string
 
 // These are valid phases of Phare.
 const (
-	// PharePhaseReconciling means the Phare is being reconciled.
-	PharePhaseReconciling PharePhase = "Reconciling"
+  // PharePhaseReconciling means the Phare is being reconciled.
+  PharePhaseReconciling PharePhase = "Reconciling"
 
-	// PharePhaseActive means the Phare is active and running.
-	PharePhaseActive PharePhase = "Active"
+  // PharePhaseActive means the Phare is active and running.
+  PharePhaseActive PharePhase = "Active"
 
-	// PharePhaseFailed means the Phare failed to reconcile correctly.
-	PharePhaseFailed PharePhase = "Failed"
+  // PharePhaseFailed means the Phare failed to reconcile correctly.
+  PharePhaseFailed PharePhase = "Failed"
 )
 
 // PhareStatus defines the observed state of Phare.
 type PhareStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// Phase represents the current phase of Phare processing.
-	Phase PharePhase `json:"phase,omitempty"`
+  // INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+  // Important: Run "make" to regenerate code after modifying this file
+  // Phase represents the current phase of Phare processing.
+  Phase PharePhase `json:"phase,omitempty"`
 
-	// Message provides additional information about the current phase.
-	Message string `json:"message,omitempty"`
+  // Message provides additional information about the current phase.
+  Message string `json:"message,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -74,22 +75,32 @@ type PhareStatus struct {
 
 // Phare is the Schema for the phares API.
 type Phare struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+  metav1.TypeMeta   `json:",inline"`
+  metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   PhareSpec   `json:"spec,omitempty"`
-	Status PhareStatus `json:"status,omitempty"`
+  Spec   PhareSpec   `json:"spec,omitempty"`
+  Status PhareStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
 // PhareList contains a list of Phare.
 type PhareList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Phare `json:"items"`
+  metav1.TypeMeta `json:",inline"`
+  metav1.ListMeta `json:"metadata,omitempty"`
+  Items           []Phare `json:"items"`
+}
+
+type ServiceSpec struct {
+  Type corev1.ServiceType `json:"type,omitempty"`
+
+  Ports []corev1.ServicePort `json:"ports,omitempty"`
+
+  Annotations map[string]string `json:"annotations,omitempty"`
+
+  Labels map[string]string `json:"labels,omitempty"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Phare{}, &PhareList{})
+  SchemeBuilder.Register(&Phare{}, &PhareList{})
 }

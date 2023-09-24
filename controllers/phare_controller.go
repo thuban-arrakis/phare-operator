@@ -21,6 +21,7 @@ import (
   "fmt"
 
   appsv1 "k8s.io/api/apps/v1"
+  corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   "k8s.io/apimachinery/pkg/runtime"
   ctrl "sigs.k8s.io/controller-runtime"
@@ -50,6 +51,7 @@ type PhareReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -82,6 +84,11 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
     return ctrl.Result{}, err
   }
 
+  // Reconcile Service
+  if _, err := r.reconcileService(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
   switch phare.Spec.Microservice.Kind {
   case "Deployment":
     // Logic for handling Deployment
@@ -100,5 +107,7 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
     For(&pharev1beta1.Phare{}).
     Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForObject{}).
     Watches(&source.Kind{Type: &appsv1.StatefulSet{}}, &handler.EnqueueRequestForObject{}).
+    Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForObject{}).
+    Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}).
     Complete(r)
 }
