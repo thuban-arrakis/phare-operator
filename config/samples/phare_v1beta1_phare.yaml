@@ -13,7 +13,7 @@ spec:
       repository: nginx
       tag: 1.19.6
     imagePullPolicy: IfNotPresent
-    kind: Deployment
+    kind: Deployment  # or StatefulSet
     name: phare-sample
     namespace: default
     replicaCount: 1

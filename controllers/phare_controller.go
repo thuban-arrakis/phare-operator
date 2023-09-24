@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	apps "k8s.io/api/apps/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -41,8 +42,6 @@ type PhareReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 }
-
-var err error
 
 //+kubebuilder:rbac:groups=phare.localcorp.internal,resources=phares,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=phare.localcorp.internal,resources=phares/status,verbs=get;update;patch
@@ -74,42 +73,16 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	deployment := &apps.Deployment{}
-	err = r.Get(ctx, req.NamespacedName, deployment)
-	if err != nil && errors.IsNotFound(err) {
-		// Before creating a new Deployment:
-		phare.Status.Phase = PharePhaseReconciling
-		phare.Status.Message = "Creating Deployment."
-		if err := r.Status().Update(ctx, &phare); err != nil {
-			// log.Error(err, "Failed to update Phare status")
-			return ctrl.Result{}, err
-		}
-
-		// Define a new Deployment
-		dep := r.desiredDeployment(&phare)
-		if err := r.Create(ctx, dep); err != nil {
-			// log.Error(err, "Failed to create Deployment for Phare")
-			return ctrl.Result{}, err
-		}
-
-		// After creating a new Deployment:
-		phare.Status.Phase = PharePhaseActive
-		phare.Status.Message = "Deployment created successfully."
-		if err := r.Status().Update(ctx, &phare); err != nil {
-			// log.Error(err, "Failed to update Phare status")
-			return ctrl.Result{}, err
-		}
-
-		// log.Info("Created new Deployment for Phare successfully")
-		return ctrl.Result{}, nil
-	} else if err != nil {
-		return ctrl.Result{}, err
+	switch phare.Spec.Microservice.Kind {
+	case "Deployment":
+		// Logic for handling Deployment
+		return r.reconcileDeployment(ctx, req, phare)
+	case "StatefulSet":
+		// Logic for handling StatefulSet
+		return r.reconcileStatefulSet(ctx, req, phare)
+	default:
+		return ctrl.Result{}, fmt.Errorf("unsupported kind: %s", phare.Spec.Microservice.Kind)
 	}
-
-	// TODO: Update the Deployment if necessary...
-	// TODO(user): your logic here
-
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -117,7 +90,77 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pharev1beta1.Phare{}).
 		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForObject{}).
+		Watches(&source.Kind{Type: &appsv1.StatefulSet{}}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
+}
+
+func (r *PhareReconciler) reconcileDeployment(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+	// Your existing logic for handling Deployment
+	deployment := &apps.Deployment{}
+	err := r.Get(ctx, req.NamespacedName, deployment)
+	if err != nil && errors.IsNotFound(err) {
+		// Before creating a new Deployment:
+		phare.Status.Phase = PharePhaseReconciling
+		phare.Status.Message = "Creating Deployment."
+		if err := r.Status().Update(ctx, &phare); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Define a new Deployment
+		dep := r.desiredDeployment(&phare)
+		if err := r.Create(ctx, dep); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// After creating a new Deployment:
+		phare.Status.Phase = PharePhaseActive
+		phare.Status.Message = "Deployment created successfully."
+		if err := r.Status().Update(ctx, &phare); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// TODO: Update the Deployment if necessary...
+
+	return ctrl.Result{}, nil
+}
+
+func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+	// Your existing logic for handling StatefulSet
+	statefulSet := &apps.StatefulSet{}
+	err := r.Get(ctx, req.NamespacedName, statefulSet)
+	if err != nil && errors.IsNotFound(err) {
+		// Before creating a new StatefulSet:
+		phare.Status.Phase = PharePhaseReconciling
+		phare.Status.Message = "Creating StatefulSet."
+		if err := r.Status().Update(ctx, &phare); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Define a new StatefulSet
+		sts := r.desiredStatefulSet(&phare)
+		if err := r.Create(ctx, sts); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// After creating a new StatefulSet:
+		phare.Status.Phase = PharePhaseActive
+		phare.Status.Message = "StatefulSet created successfully."
+		if err := r.Status().Update(ctx, &phare); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// TODO: Update the StatefulSet if necessary...
+	return ctrl.Result{}, nil
 }
 
 func (r *PhareReconciler) desiredDeployment(phare *pharev1beta1.Phare) *apps.Deployment {
@@ -136,6 +179,43 @@ func (r *PhareReconciler) desiredDeployment(phare *pharev1beta1.Phare) *apps.Dep
 			Namespace: phare.Namespace,
 		},
 		Spec: apps.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Replicas: &replicaCount,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  phare.Name,
+							Image: phare.Spec.Microservice.Image.Repository + ":" + phare.Spec.Microservice.Image.Tag,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.StatefulSet {
+	replicaCount := phare.Spec.Microservice.ReplicaCount
+
+	labels := map[string]string{
+		"app": phare.Name,
+	}
+
+	// log := r.Log.WithValues("phare", phare.Name)
+	// log.Info("Generating desired StatefulSet for Phare", "Image", phare.Spec.Microservice.Image.Repository+":"+phare.Spec.Microservice.Image.Tag, "ReplicaCount", replicaCount)
+
+	return &apps.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      phare.Name,
+			Namespace: phare.Namespace,
+		},
+		Spec: apps.StatefulSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},

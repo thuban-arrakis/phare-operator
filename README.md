@@ -1,5 +1,5 @@
 # operator
-<img src="https://openai-labs-public-images-prod.azureedge.net/user-I9IG7CZrg1dUe7B7dgqpFWyu/generations/generation-o0pJTfrjLhChrHzr7FwfKcpn/image.webp" width=420>
+<img src="https://openai-labs-public-images-prod.azureedge.net/user-I9IG7CZrg1dUe7B7dgqpFWyu/generations/generation-o0pJTfrjLhChrHzr7FwfKcpn/image.png" width=420>
 
 // TODO(user): Add simple overview of use/purpose
 
