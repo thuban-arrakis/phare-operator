@@ -30,12 +30,12 @@ type PhareSpec struct {
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroserviceSpec struct {
-  Name            string    `json:"name"`
-  Namespace       string    `json:"namespace"`
-  Kind            string    `json:"kind"`
-  ReplicaCount    int32     `json:"replicaCount"`
-  Image           ImageSpec `json:"image"`
-  ImagePullPolicy string    `json:"imagePullPolicy"`
+  Namespace       string            `json:"namespace,omitempty"`
+  Kind            string            `json:"kind"`
+  ReplicaCount    int32             `json:"replicaCount,omitempty"`
+  Image           ImageSpec         `json:"image"`
+  ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+  Env             []corev1.EnvVar   `json:"env,omitempty"`
 }
 
 // ImageSpec holds information about the microservice's container image.
