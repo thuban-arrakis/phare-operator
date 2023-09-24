@@ -6,16 +6,16 @@ metadata:
     app.kubernetes.io/created-by: operator
   name: phare-sample
 spec:
+  config:
+    key: value
   microservice:
-    name: ""
-    namespace: ""
-    kind: ""
-    replicaCount: 1
     image:
-      repository: ""
-      tag: ""
-    imagePullPolicy: ""
-    resources: {}
-  service: {}
-  config: {}
-
+      repository: nginx
+      tag: 1.19.6
+    imagePullPolicy: IfNotPresent
+    kind: Deployment
+    name: phare-sample
+    namespace: default
+    replicaCount: 1
+  service:
+    name: phare-sample

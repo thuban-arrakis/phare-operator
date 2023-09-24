@@ -1,0 +1,103 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: phares.phare.localcorp.internal
+spec:
+  group: phare.localcorp.internal
+  names:
+    kind: Phare
+    listKind: PhareList
+    plural: phares
+    singular: phare
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: Phare is the Schema for the phares API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PhareSpec defines the desired state of Phare.
+            properties:
+              config:
+                additionalProperties:
+                  type: string
+                type: object
+              microservice:
+                description: MicroserviceSpec contains the specifications related
+                  to the microservice.
+                properties:
+                  image:
+                    description: ImageSpec holds information about the microservice's
+                      container image.
+                    properties:
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    required:
+                    - repository
+                    - tag
+                    type: object
+                  imagePullPolicy:
+                    type: string
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  replicaCount:
+                    format: int32
+                    type: integer
+                required:
+                - image
+                - imagePullPolicy
+                - kind
+                - name
+                - namespace
+                - replicaCount
+                type: object
+              service:
+                additionalProperties:
+                  type: string
+                type: object
+            required:
+            - config
+            - microservice
+            - service
+            type: object
+          status:
+            description: PhareStatus defines the observed state of Phare.
+            properties:
+              message:
+                description: Message provides additional information about the current
+                  phase.
+                type: string
+              phase:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file Phase represents the current phase of Phare processing.'
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
