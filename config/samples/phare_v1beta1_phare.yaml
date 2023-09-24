@@ -1,0 +1,21 @@
+apiVersion: phare.localcorp.internal/v1beta1
+kind: Phare
+metadata:
+  labels:
+    app.kubernetes.io/name: phare
+    app.kubernetes.io/created-by: operator
+  name: phare-sample
+spec:
+  microservice:
+    name: ""
+    namespace: ""
+    kind: ""
+    replicaCount: 1
+    image:
+      repository: ""
+      tag: ""
+    imagePullPolicy: ""
+    resources: {}
+  service: {}
+  config: {}
+
