@@ -1,5 +1,5 @@
 # operator
-<img src="https://openai-labs-public-images-prod.azureedge.net/user-I9IG7CZrg1dUe7B7dgqpFWyu/generations/generation-o0pJTfrjLhChrHzr7FwfKcpn/image.png" width=420>
+<img alt="logo" src="./assets/logo.png" width="420" height="420" />
 
 // TODO(user): Add simple overview of use/purpose
 
@@ -93,4 +93,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

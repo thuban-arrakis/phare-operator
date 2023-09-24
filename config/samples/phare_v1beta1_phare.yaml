@@ -8,12 +8,16 @@ metadata:
 spec:
   config:
     key: value
+    config.js: |
+      module.exports = {
+        key: 'value'
+      }
   microservice:
     image:
       repository: nginx
       tag: 1.19.6
     imagePullPolicy: IfNotPresent
-    kind: Deployment  # or StatefulSet
+    kind: Deployment
     name: phare-sample
     namespace: default
     replicaCount: 1
