@@ -9,62 +9,76 @@ import (
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  "k8s.io/utils/pointer"
   ctrl "sigs.k8s.io/controller-runtime"
-
-  // "github.com/google/go-cmp/cmp"
+  "sigs.k8s.io/controller-runtime/pkg/client"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
-  // 1. Fetch the current StatefulSet from the cluster.
-  currentSts := &apps.StatefulSet{}
-  err := r.Get(ctx, req.NamespacedName, currentSts)
+  existingStatefulSet := &apps.StatefulSet{}
+  err := r.Get(ctx, req.NamespacedName, existingStatefulSet)
+
   if err != nil && errors.IsNotFound(err) {
-    // The StatefulSet does not exist. Create it.
-    newSts := r.buildStatefulSetFromPhare(phare)
-    if err := r.Create(ctx, newSts); err != nil {
+    // Before creating a new StatefulSet:
+    phare.Status.Phase = PharePhaseReconciling
+    phare.Status.Message = "Creating StatefulSet."
+    r.Log.Info("Creating StatefulSet")
+    if err := r.Status().Update(ctx, &phare); err != nil {
       return ctrl.Result{}, err
     }
-    return ctrl.Result{Requeue: true}, nil
+
+    // Define a new StatefulSet
+    sts := r.desiredStatefulSet(&phare)
+    r.Log.Info("Creating StatefulSet", "StatefulSet.Namespace", sts.Namespace, "StatefulSet.Name", sts.Name)
+    if err := r.Create(ctx, sts); err != nil {
+      return ctrl.Result{}, err
+    }
+
+    // After creating a new StatefulSet:
+    phare.Status.Phase = PharePhaseActive
+    phare.Status.Message = "StatefulSet created successfully."
+    r.Log.Info("StatefulSet created successfully")
+    if err := r.Status().Update(ctx, &phare); err != nil {
+      return ctrl.Result{}, err
+    }
+
+    return ctrl.Result{}, nil
   } else if err != nil {
     return ctrl.Result{}, err
   }
 
-  // 2. Convert the Phare CR spec to a desired StatefulSet spec.
-  desiredStsSpec := r.convertPhareSpecToSts(phare)
-
-  // 3. Compare the desired StatefulSet spec with the current one.
-  if !reflect.DeepEqual(desiredStsSpec, currentSts.Spec) {
-    currentSts.Spec = desiredStsSpec
-    if err := r.Update(ctx, currentSts); err != nil {
+  desired := r.desiredStatefulSet(&phare)
+  if !reflect.DeepEqual(existingStatefulSet.Spec, desired.Spec) {
+    patch := client.MergeFrom(existingStatefulSet.DeepCopy())
+    r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
+    existingStatefulSet.Spec = desired.Spec
+    if err := r.Patch(ctx, existingStatefulSet, patch, client.FieldOwner("phare-controller")); err != nil {
       return ctrl.Result{}, err
     }
-    return ctrl.Result{Requeue: true}, nil
   }
 
   return ctrl.Result{}, nil
 }
 
-func (r *PhareReconciler) buildStatefulSetFromPhare(phare pharev1beta1.Phare) *apps.StatefulSet {
-  // Define the labels to be used for the StatefulSet
+func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.StatefulSet {
+  replicaCount := phare.Spec.Microservice.ReplicaCount
+
   labels := map[string]string{
     "app": phare.Name,
-    // add any other labels if needed
   }
 
-  // Define the StatefulSet
   statefulSet := &apps.StatefulSet{
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name,
       Namespace: phare.Namespace,
-      Labels:    labels,
     },
     Spec: apps.StatefulSetSpec{
-      Replicas: &phare.Spec.Microservice.ReplicaCount,
       Selector: &metav1.LabelSelector{
         MatchLabels: labels,
       },
+      Replicas: &replicaCount,
       Template: corev1.PodTemplateSpec{
         ObjectMeta: metav1.ObjectMeta{
           Labels: labels,
@@ -72,16 +86,23 @@ func (r *PhareReconciler) buildStatefulSetFromPhare(phare pharev1beta1.Phare) *a
         Spec: corev1.PodSpec{
           Containers: []corev1.Container{
             {
-              Name:            phare.Name,
-              Image:           fmt.Sprintf("%s:%s", phare.Spec.Microservice.Image.Repository, phare.Spec.Microservice.Image.Tag),
-              ImagePullPolicy: corev1.PullPolicy(phare.Spec.Microservice.ImagePullPolicy),
-              // Add other container fields as needed based on your MicroserviceSpec
+              Name:  phare.Name,
+              Image: phare.Spec.Microservice.Image.Repository + ":" + phare.Spec.Microservice.Image.Tag,
             },
           },
-          // Add other PodSpec fields as needed
         },
       },
-      // Add other StatefulSetSpec fields as needed
+    },
+  }
+
+  // Set the owner reference
+  statefulSet.OwnerReferences = []metav1.OwnerReference{
+    {
+      APIVersion: phare.APIVersion, // Ensure this matches the API version of your Phare CRD
+      Kind:       phare.Kind,       // Typically this would be "Phare"
+      Name:       phare.Name,
+      UID:        phare.UID,
+      Controller: pointer.Bool(true),
     },
   }
 
@@ -100,7 +121,8 @@ func (r *PhareReconciler) buildStatefulSetFromPhare(phare pharev1beta1.Phare) *a
     }
     configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
     if err != nil {
-      return nil
+      fmt.Println("Error hashing config map data")
+      // Handle error, maybe return an error or log it
     }
 
     if statefulSet.Spec.Template.Annotations == nil {
@@ -118,71 +140,4 @@ func (r *PhareReconciler) buildStatefulSetFromPhare(phare pharev1beta1.Phare) *a
   }
 
   return statefulSet
-}
-
-func (r *PhareReconciler) convertPhareSpecToSts(phare pharev1beta1.Phare) apps.StatefulSetSpec {
-  // Define the labels to be used for the StatefulSet
-  labels := map[string]string{
-    "app": phare.Name,
-    // add other labels if needed
-  }
-
-  // Construct the StatefulSetSpec based on the PhareSpec
-  stsSpec := apps.StatefulSetSpec{
-    Replicas: &phare.Spec.Microservice.ReplicaCount,
-    Selector: &metav1.LabelSelector{
-      MatchLabels: labels,
-    },
-    Template: corev1.PodTemplateSpec{
-      ObjectMeta: metav1.ObjectMeta{
-        Labels: labels,
-      },
-      Spec: corev1.PodSpec{
-        Containers: []corev1.Container{
-          {
-            Name:            phare.Name,
-            Image:           fmt.Sprintf("%s:%s", phare.Spec.Microservice.Image.Repository, phare.Spec.Microservice.Image.Tag),
-            ImagePullPolicy: corev1.PullPolicy(phare.Spec.Microservice.ImagePullPolicy),
-            // Add other container fields as needed based on your MicroserviceSpec
-          },
-        },
-        // Add other PodSpec fields if needed, like volumes, etc.
-      },
-    },
-    // Add any other StatefulSetSpec configurations if needed, like volumeClaimTemplates, etc.
-  }
-
-  // Check if the spec.config is not empty
-  if phare.Spec.Config != nil && len(phare.Spec.Config) > 0 {
-    // Add ConfigMap as a volume to the Pod template
-    statefulSetVolume := corev1.Volume{
-      Name: "config-volume",
-      VolumeSource: corev1.VolumeSource{
-        ConfigMap: &corev1.ConfigMapVolumeSource{
-          LocalObjectReference: corev1.LocalObjectReference{
-            Name: phare.Name + "-config",
-          },
-        },
-      },
-    }
-    configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
-    if err != nil {
-      return stsSpec
-    }
-
-    if stsSpec.Template.Annotations == nil {
-      stsSpec.Template.Annotations = make(map[string]string)
-    }
-    stsSpec.Template.Annotations["checksum/config-files"] = configMapDataHash
-    stsSpec.Template.Spec.Volumes = append(stsSpec.Template.Spec.Volumes, statefulSetVolume)
-
-    // Mount the volume to the container
-    volumeMount := corev1.VolumeMount{
-      Name:      "config-volume",
-      MountPath: "/path/to/mount", // Adjust this to your desired mount path
-    }
-    stsSpec.Template.Spec.Containers[0].VolumeMounts = append(stsSpec.Template.Spec.Containers[0].VolumeMounts, volumeMount)
-  }
-
-  return stsSpec
 }
