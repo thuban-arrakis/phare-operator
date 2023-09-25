@@ -111,10 +111,10 @@ func (r *PhareReconciler) desiredDeployment(phare *pharev1beta1.Phare) *apps.Dep
       // Handle error, maybe return an error or log it
     }
 
-    if deployment.Annotations == nil {
-      deployment.Annotations = make(map[string]string)
+    if deployment.Spec.Template.Annotations == nil {
+      deployment.Spec.Template.Annotations = make(map[string]string)
     }
-    deployment.Annotations["config-hash"] = configMapDataHash
+    deployment.Spec.Template.Annotations["checksum/config-files"] = configMapDataHash
     deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, deploymentVolume)
 
     // Mount the volume to the container

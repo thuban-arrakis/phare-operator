@@ -16,21 +16,9 @@ import (
 )
 
 func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
-  // Log at the start
-  // r.Log.Info("Starting reconcileConfigMap")
 
-  // Check if spec.config is set
-  if phare.Spec.Config == nil {
-    // r.Log.Info("phare.Spec.Config is nil, skipping")
-    return nil
-  }
-  // Check if spec.config is set
-  if phare.Spec.Config == nil {
-    return nil
-  }
-
-  // Create or update the ConfigMap
-  cm := &corev1.ConfigMap{
+  // 1. Construct Desired ConfigMap
+  desiredCM := &corev1.ConfigMap{
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name + "-config",
       Namespace: phare.Namespace,
@@ -38,33 +26,52 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
     Data: phare.Spec.Config,
   }
 
-  // Set the Phare instance as the owner and controller
-  ctrl.SetControllerReference(&phare, cm, r.Scheme)
+  // Set Phare CR as the owner of this ConfigMap
+  ctrl.SetControllerReference(&phare, desiredCM, r.Scheme)
 
-  // Check if this ConfigMap already exists
-  found := &corev1.ConfigMap{}
-  err := r.Get(ctx, client.ObjectKey{Name: cm.Name, Namespace: cm.Namespace}, found)
-  // Log after checking for the ConfigMap existence
-  // r.Log.Info("Checking for existing ConfigMap")
-  if err != nil && errors.IsNotFound(err) {
-    // Create the ConfigMap
-    if err = r.Create(ctx, cm); err != nil {
+  // 2. Check for Existing ConfigMap
+  existingCM := &corev1.ConfigMap{}
+  err := r.Get(ctx, client.ObjectKey{Name: desiredCM.Name, Namespace: desiredCM.Namespace}, existingCM)
+
+  if err != nil {
+    if errors.IsNotFound(err) {
+      // ConfigMap doesn't exist, create it
+      if err = r.Create(ctx, desiredCM); err != nil {
+        return err
+      }
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created ConfigMap %s", existingCM.Name)
+    } else {
+      // Another error occurred
       return err
     }
-    // Log if ConfigMap is created
-    // r.Log.Info("Creating new ConfigMap")
-    // r.EventRecorder.Event(&phare, corev1.EventTypeNormal, "ConfigMapCreated", "Successfully created ConfigMap")
-  } else if err != nil {
-    return err
   } else {
-    // ConfigMap already exists, update if necessary
-    found.Data = cm.Data
-    if err = r.Update(ctx, found); err != nil {
-      return err
+    // 3. Check if Phare CR's spec.config has changed
+    if !isDataEqual(existingCM.Data, desiredCM.Data) {
+      existingCM.Data = desiredCM.Data
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredCM.Name)
+      if err = r.Update(ctx, existingCM); err != nil {
+        return err
+      }
     }
+
+    // 4. If ConfigMap data itself has been changed, reconcile it
+    // This is handled automatically because the desiredCM is always constructed from Phare CR's spec.config
   }
 
   return nil
+}
+
+// Utility function to compare map data
+func isDataEqual(map1, map2 map[string]string) bool {
+  if len(map1) != len(map2) {
+    return false
+  }
+  for k, v1 := range map1 {
+    if v2, ok := map2[k]; !ok || v1 != v2 {
+      return false
+    }
+  }
+  return true
 }
 
 func (r *PhareReconciler) hashConfigMapData(configMapName string, namespace string) (string, error) {

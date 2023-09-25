@@ -24,11 +24,10 @@ import (
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/client-go/tools/record"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
-  "sigs.k8s.io/controller-runtime/pkg/handler"
   "sigs.k8s.io/controller-runtime/pkg/log"
-  "sigs.k8s.io/controller-runtime/pkg/source"
 
   // TODO(user): Event recorder is required to emit Events.
   // "k8s.io/client-go/tools/record"
@@ -40,9 +39,9 @@ import (
 // PhareReconciler reconciles a Phare object
 type PhareReconciler struct {
   client.Client
-  Log    logr.Logger
-  Scheme *runtime.Scheme
-  // EventRecorder record.EventRecorder
+  Log      logr.Logger
+  Scheme   *runtime.Scheme
+  Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=phare.localcorp.internal,resources=phares,verbs=get;list;watch;create;update;patch;delete
@@ -105,9 +104,9 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
   return ctrl.NewControllerManagedBy(mgr).
     For(&pharev1beta1.Phare{}).
-    Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForObject{}).
-    Watches(&source.Kind{Type: &appsv1.StatefulSet{}}, &handler.EnqueueRequestForObject{}).
-    Watches(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForObject{}).
-    Watches(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}).
+    Owns(&appsv1.Deployment{}).
+    Owns(&appsv1.StatefulSet{}).
+    Owns(&corev1.Service{}).
+    Owns(&corev1.ConfigMap{}).
     Complete(r)
 }
