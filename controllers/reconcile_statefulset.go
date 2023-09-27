@@ -3,7 +3,6 @@ package controllers
 import (
   "context"
   "fmt"
-  "reflect"
 
   apps "k8s.io/api/apps/v1"
   corev1 "k8s.io/api/core/v1"
@@ -12,50 +11,51 @@ import (
   "k8s.io/utils/pointer"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
+  "sigs.k8s.io/yaml"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+  "github.com/localcorp/phare-controller/pkg/validator"
 )
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
   existingStatefulSet := &apps.StatefulSet{}
+  desired := r.desiredStatefulSet(&phare)
   err := r.Get(ctx, req.NamespacedName, existingStatefulSet)
 
-  if err != nil && errors.IsNotFound(err) {
-    // Before creating a new StatefulSet:
-    phare.Status.Phase = PharePhaseReconciling
-    phare.Status.Message = "Creating StatefulSet."
-    r.Log.Info("Creating StatefulSet")
-    if err := r.Status().Update(ctx, &phare); err != nil {
+  a := toYAML(existingStatefulSet.Spec) // Rename it later
+  b := toYAML(desired.Spec)             // Rename it later
+
+  if err != nil {
+    if errors.IsNotFound(err) {
+      // StatefulSet doesn't exist, create it
+      if err := r.Create(ctx, desired); err != nil {
+        fmt.Println("Error creating StatefulSet")
+        return ctrl.Result{}, err
+      }
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created StatefulSet %s", desired.Name)
+      return ctrl.Result{}, nil
+    } else {
+      fmt.Println("Error getting StatefulSet")
       return ctrl.Result{}, err
     }
+  } else {
+    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(b, a)
+    // validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
+    // validator.PrintMap("Desired Map:", desiredMap)
 
-    // Define a new StatefulSet
-    sts := r.desiredStatefulSet(&phare)
-    r.Log.Info("Creating StatefulSet", "StatefulSet.Namespace", sts.Namespace, "StatefulSet.Name", sts.Name)
-    if err := r.Create(ctx, sts); err != nil {
-      return ctrl.Result{}, err
-    }
-
-    // After creating a new StatefulSet:
-    phare.Status.Phase = PharePhaseActive
-    phare.Status.Message = "StatefulSet created successfully."
-    r.Log.Info("StatefulSet created successfully")
-    if err := r.Status().Update(ctx, &phare); err != nil {
-      return ctrl.Result{}, err
-    }
-
-    return ctrl.Result{}, nil
-  } else if err != nil {
-    return ctrl.Result{}, err
-  }
-
-  desired := r.desiredStatefulSet(&phare)
-  if !reflect.DeepEqual(existingStatefulSet.Spec, desired.Spec) {
-    patch := client.MergeFrom(existingStatefulSet.DeepCopy())
-    r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
-    existingStatefulSet.Spec = desired.Spec
-    if err := r.Patch(ctx, existingStatefulSet, patch, client.FieldOwner("phare-controller")); err != nil {
-      return ctrl.Result{}, err
+    if !isValid {
+      validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
+      validator.PrintMap("Desired Map:", desiredMap)
+      patch := client.MergeFrom(existingStatefulSet.DeepCopy())
+      r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
+      existingStatefulSet.Spec = desired.Spec
+      if err := r.Patch(ctx, existingStatefulSet, patch, client.FieldOwner("phare-controller")); err != nil {
+        fmt.Println("Error patching StatefulSet")
+        return ctrl.Result{}, err
+      }
+      return ctrl.Result{}, nil
+    } else {
+      fmt.Println("StatefulSet matches the desired configuration.")
     }
   }
 
@@ -140,4 +140,12 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
   }
 
   return statefulSet
+}
+
+func toYAML(obj interface{}) string {
+  data, err := yaml.Marshal(obj)
+  if err != nil {
+    return fmt.Sprintf("Error marshaling to YAML: %s", err)
+  }
+  return string(data)
 }
