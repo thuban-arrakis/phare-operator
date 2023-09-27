@@ -29,33 +29,33 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
     if errors.IsNotFound(err) {
       // StatefulSet doesn't exist, create it
       if err := r.Create(ctx, desired); err != nil {
-        fmt.Println("Error creating StatefulSet")
+        r.Log.Info("Error creating StatefulSet")
         return ctrl.Result{}, err
       }
       r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created StatefulSet %s", desired.Name)
       return ctrl.Result{}, nil
     } else {
-      fmt.Println("Error getting StatefulSet")
+      r.Log.Info("Error getting StatefulSet")
       return ctrl.Result{}, err
     }
   } else {
     isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(b, a)
-    // validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
-    // validator.PrintMap("Desired Map:", desiredMap)
+    // validator.PrintMap("Modified Current Map:", modifiedCurrentMap) // Debugging purposes only
+    // validator.PrintMap("Desired Map:", desiredMap) // Debugging purposes only
 
     if !isValid {
-      validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
-      validator.PrintMap("Desired Map:", desiredMap)
+      validator.PrintMap("Modified Current Map:", modifiedCurrentMap) // Debugging purposes only
+      validator.PrintMap("Desired Map:", desiredMap)                  // Debugging purposes only
       patch := client.MergeFrom(existingStatefulSet.DeepCopy())
       r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
       existingStatefulSet.Spec = desired.Spec
       if err := r.Patch(ctx, existingStatefulSet, patch, client.FieldOwner("phare-controller")); err != nil {
-        fmt.Println("Error patching StatefulSet")
+        r.Log.Info("Error patching StatefulSet")
         return ctrl.Result{}, err
       }
       return ctrl.Result{}, nil
     } else {
-      fmt.Println("StatefulSet matches the desired configuration.")
+      r.Log.Info("StatefulSet matches the desired configuration.")
     }
   }
 
