@@ -30,7 +30,6 @@ type PhareSpec struct {
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroserviceSpec struct {
-  Namespace       string            `json:"namespace,omitempty"`
   Kind            string            `json:"kind"`
   ReplicaCount    int32             `json:"replicaCount,omitempty"`
   Image           ImageSpec         `json:"image"`
