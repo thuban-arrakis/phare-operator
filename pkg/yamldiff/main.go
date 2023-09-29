@@ -1,32 +1,27 @@
-package util
+package yamldiff
 
 import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/localcorp/phare-controller/util/yaml-diff/yamldiff"
 )
 
 // Update the signature to indicate it returns a string
 func Diff(desired, current string) string {
-	yamls1, err := yamldiff.Load(desired)
+	yamls1, err := Load(desired)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v", err)
 		return ""
 	}
 
-	yamls2, err := yamldiff.Load(current)
+	yamls2, err := Load(current)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v", err)
 		return ""
 	}
 
 	var diffs []string
-	for _, diff := range yamldiff.Do(yamls1, yamls2) {
-		// The two lines below seem redundant as they do the same thing twice.
-		// Keeping only the second line which appends to the diffs slice would suffice.
-		fmt.Println(diff.Dump())
+	for _, diff := range Do(yamls1, yamls2) {
 		diffs = append(diffs, colorizeDiff(diff.Dump()))
 	}
 

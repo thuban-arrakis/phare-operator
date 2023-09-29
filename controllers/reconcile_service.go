@@ -6,7 +6,7 @@ import (
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   "github.com/localcorp/phare-controller/pkg/validator"
-  util "github.com/localcorp/phare-controller/util"
+  yamldiff "github.com/localcorp/phare-controller/pkg/yamldiff"
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,8 +48,8 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
       // validator.PrintMap("Desired Map:", desiredMap)
       // d := util.GetDiff(desiredMap, modifiedCurrentMap) // Debug purposes only
       // fmt.Println(util.ToYAML(d, 0))                    // Debug purposes only
-      diffOutput := util.Diff(map1, map2) // Debugging purposes only
-      fmt.Println(diffOutput)             // Debugging purposes only
+      diffOutput := yamldiff.Diff(map1, map2) // Debugging purposes only
+      fmt.Println(diffOutput)                 // Debugging purposes only
       patch := client.MergeFrom(existingService.DeepCopy())
       r.Log.Info("Updating Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
       existingService.Spec = desired.Spec
