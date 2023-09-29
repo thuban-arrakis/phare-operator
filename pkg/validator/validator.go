@@ -1,7 +1,6 @@
 package validator
 
 import (
-  "fmt"
   "reflect"
 
   "gopkg.in/yaml.v3"
@@ -91,12 +90,10 @@ func cleanMapBasedOnAnother(baseMap, referenceMap map[string]interface{}) map[st
   return baseMap
 }
 
-// printMap prints a map in a more readable format
-func PrintMap(title string, data map[string]interface{}) {
-  fmt.Println(title)
+func PrintMap(data map[string]interface{}) string {
   bytes, err := yaml.Marshal(data)
   if err != nil {
-    panic(err)
+    return ""
   }
-  fmt.Println(string(bytes))
+  return string(bytes)
 }
