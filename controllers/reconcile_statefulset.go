@@ -15,6 +15,7 @@ import (
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   "github.com/localcorp/phare-controller/pkg/validator"
+  yamldiff "github.com/localcorp/phare-controller/pkg/yamldiff"
 )
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
@@ -22,8 +23,8 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
   desired := r.desiredStatefulSet(&phare)
   err := r.Get(ctx, req.NamespacedName, existingStatefulSet)
 
-  a := toYAML(existingStatefulSet.Spec) // Rename it later
-  b := toYAML(desired.Spec)             // Rename it later
+  existingStatefulSetSpec := toYAML(existingStatefulSet.Spec)
+  desiredStatefulSetSpec := toYAML(desired.Spec)
 
   if err != nil {
     if errors.IsNotFound(err) {
@@ -39,13 +40,14 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
       return ctrl.Result{}, err
     }
   } else {
-    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(b, a)
-    // validator.PrintMap("Modified Current Map:", modifiedCurrentMap) // Debugging purposes only
-    // validator.PrintMap("Desired Map:", desiredMap) // Debugging purposes only
+    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredStatefulSetSpec, existingStatefulSetSpec)
 
     if !isValid {
-      validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
-      validator.PrintMap(desiredMap)         // Debugging purposes only
+      r.Log.Info("StatefulSet does not match the desired configuration", "StatefulSet.Namespace", desired.Namespace, "StatefulSet.Name", desired.Name)
+      map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
+      map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
+      diffOutput := yamldiff.Diff(map1, map2)        // Debugging purposes only
+      fmt.Println(diffOutput)                        // Debugging purposes only
       patch := client.MergeFrom(existingStatefulSet.DeepCopy())
       r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
       existingStatefulSet.Spec = desired.Spec
@@ -55,7 +57,7 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
       }
       return ctrl.Result{}, nil
     } else {
-      r.Log.Info("StatefulSet matches the desired configuration.")
+      r.Log.Info("StatefulSet matches the desired configuration", "StatefulSet.Namespace", desired.Namespace, "SetatefilSet.Name", desired.Name)
     }
   }
 
@@ -142,6 +144,7 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
   return statefulSet
 }
 
+// Move this to pkg/utils or something.
 func toYAML(obj interface{}) string {
   data, err := yaml.Marshal(obj)
   if err != nil {

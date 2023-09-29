@@ -19,9 +19,9 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
   desired := r.desiredService(&phare)
   err := r.Get(ctx, req.NamespacedName, existingService)
 
-  a := toYAML(existingService.Spec) // Rename it later
+  existingServiceSpec := toYAML(existingService.Spec) // Rename it later
   // fmt.Println("a: ", a)
-  b := toYAML(desired.Spec) // Rename it later
+  desiredServiceSpec := toYAML(desired.Spec) // Rename it later
   // fmt.Println("b: ", b)
 
   if err != nil {
@@ -36,20 +36,14 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
       return ctrl.Result{}, err
     }
   } else {
-    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(b, a)
-    map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
-    map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
-    // validator.PrintMap(desiredMap)                          // Debugging purposes only
-    // diffOutput := util.Diff(map1, map2) // Debugging purposes only
-    // fmt.Println(diffOutput)             // Debugging purposes only
+    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredServiceSpec, existingServiceSpec)
 
     if !isValid {
-      // validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
-      // validator.PrintMap("Desired Map:", desiredMap)
-      // d := util.GetDiff(desiredMap, modifiedCurrentMap) // Debug purposes only
-      // fmt.Println(util.ToYAML(d, 0))                    // Debug purposes only
-      diffOutput := yamldiff.Diff(map1, map2) // Debugging purposes only
-      fmt.Println(diffOutput)                 // Debugging purposes only
+      r.Log.Info("Service does not match the desired configuration", "Service.Namespace", desired.Namespace, "Service.Name", desired.Name)
+      map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
+      map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
+      diffOutput := yamldiff.Diff(map1, map2)        // Debugging purposes only
+      fmt.Println(diffOutput)                        // Debugging purposes only
       patch := client.MergeFrom(existingService.DeepCopy())
       r.Log.Info("Updating Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
       existingService.Spec = desired.Spec
