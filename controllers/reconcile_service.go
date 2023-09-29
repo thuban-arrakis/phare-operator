@@ -19,9 +19,9 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
   desired := r.desiredService(&phare)
   err := r.Get(ctx, req.NamespacedName, existingService)
 
-  existingServiceSpec := toYAML(existingService.Spec) // Rename it later
+  existingServiceSpec := toYAML(existingService) // Rename it later
   // fmt.Println("a: ", a)
-  desiredServiceSpec := toYAML(desired.Spec) // Rename it later
+  desiredServiceSpec := toYAML(desired) // Rename it later
   // fmt.Println("b: ", b)
 
   if err != nil {
@@ -40,13 +40,20 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 
     if !isValid {
       r.Log.Info("Service does not match the desired configuration", "Service.Namespace", desired.Namespace, "Service.Name", desired.Name)
+
       map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
       map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
-      diffOutput := yamldiff.Diff(map1, map2)        // Debugging purposes only
-      fmt.Println(diffOutput)                        // Debugging purposes only
+
+      diffOutput := yamldiff.Diff(map1, map2) // Debugging purposes only
+      fmt.Println(diffOutput)                 // Debugging purposes only
+
       patch := client.MergeFrom(existingService.DeepCopy())
       r.Log.Info("Updating Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
+
+      // Copy desired service's metadata and spec to existingService
+      existingService.ObjectMeta = desired.ObjectMeta
       existingService.Spec = desired.Spec
+
       if err := r.Patch(ctx, existingService, patch, client.FieldOwner("phare-controller")); err != nil {
         return ctrl.Result{}, err
       }
@@ -60,7 +67,16 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 }
 
 func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Service {
-  labels := map[string]string{
+
+  // Keep the same labels at the metadata level
+  metadataLabels := map[string]string{
+    "app":                          phare.Name,
+    "app.kubernetes.io/created-by": "phare-controller",
+    // "version":                      phare.Spec.Microservice.Image.Tag // Use later for rolling updates
+  }
+
+  // Only use the "app" label for the spec level
+  specLabels := map[string]string{
     "app": phare.Name,
   }
 
@@ -74,16 +90,20 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
       Name:        phare.Name,
       Namespace:   phare.Namespace,
       Annotations: phare.Spec.Service.Annotations,
-      Labels:      mergeMaps(labels, phare.Spec.Service.Labels),
+      Labels:      mergeMaps(metadataLabels, phare.Spec.Service.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
     },
     Spec: corev1.ServiceSpec{
-      Selector: labels,
+      Selector: specLabels,
       Type:     serviceType,
       Ports:    phare.Spec.Service.Ports,
     },
   }
 
   // Set owner reference for the service to be the Phare object
+  // Think about moving to `service.ObjectMeta.OwnerReferences`
+  // This will let Kubernetes know that the service is related to the Phare object
+  // and thus will be deleted when the Phare object is deleted
+  // https://book.kubebuilder.io/reference/using-finalizers.html#finalizer-owners.
   if err := ctrl.SetControllerReference(phare, service, r.Scheme); err != nil {
     r.Log.Error(err, "Failed to set controller reference for Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
     return nil
