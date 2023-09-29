@@ -44,8 +44,8 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
     // validator.PrintMap("Desired Map:", desiredMap) // Debugging purposes only
 
     if !isValid {
-      validator.PrintMap("Modified Current Map:", modifiedCurrentMap) // Debugging purposes only
-      validator.PrintMap("Desired Map:", desiredMap)                  // Debugging purposes only
+      validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
+      validator.PrintMap(desiredMap)         // Debugging purposes only
       patch := client.MergeFrom(existingStatefulSet.DeepCopy())
       r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
       existingStatefulSet.Spec = desired.Spec

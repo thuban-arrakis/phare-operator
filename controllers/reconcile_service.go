@@ -6,7 +6,7 @@ import (
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   "github.com/localcorp/phare-controller/pkg/validator"
-  "github.com/localcorp/phare-controller/util"
+  util "github.com/localcorp/phare-controller/util"
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,14 +37,19 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
     }
   } else {
     isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(b, a)
-    // validator.PrintMap("Modified Current Map:", modifiedCurrentMap) // Debugging purposes only
-    // validator.PrintMap("Desired Map:", desiredMap) // Debugging purposes only
+    map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
+    map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
+    // validator.PrintMap(desiredMap)                          // Debugging purposes only
+    // diffOutput := util.Diff(map1, map2) // Debugging purposes only
+    // fmt.Println(diffOutput)             // Debugging purposes only
 
     if !isValid {
       // validator.PrintMap("Modified Current Map:", modifiedCurrentMap)
       // validator.PrintMap("Desired Map:", desiredMap)
-      d := util.GetDiff(desiredMap, modifiedCurrentMap) // Debug purposes only
-      fmt.Println("diff: ", d)                          // Debug purposes only
+      // d := util.GetDiff(desiredMap, modifiedCurrentMap) // Debug purposes only
+      // fmt.Println(util.ToYAML(d, 0))                    // Debug purposes only
+      diffOutput := util.Diff(map1, map2) // Debugging purposes only
+      fmt.Println(diffOutput)             // Debugging purposes only
       patch := client.MergeFrom(existingService.DeepCopy())
       r.Log.Info("Updating Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
       existingService.Spec = desired.Spec
