@@ -19,17 +19,19 @@ package v1beta1
 import (
   corev1 "k8s.io/api/core/v1"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 // PhareSpec defines the desired state of Phare.
 type PhareSpec struct {
-  Microservice MicroserviceSpec  `json:"microservice"`
+  MicroService MicroServiceSpec  `json:"microservice"`
   Service      ServiceSpec       `json:"service,omitempty"`
-  Config       map[string]string `json:"config,omitempty"`
+  Config       map[string]string `json:"config,omitempty"` // TODO: I think it should be in toolchan
+  ToolChain    ToolChainSpec     `json:"toolchain,omitempty"`
 }
 
 // MicroserviceSpec contains the specifications related to the microservice.
-type MicroserviceSpec struct {
+type MicroServiceSpec struct {
   Kind            string              `json:"kind"`
   ReplicaCount    int32               `json:"replicaCount,omitempty"`
   Image           ImageSpec           `json:"image"`
@@ -94,6 +96,7 @@ type PhareList struct {
   Items           []Phare `json:"items"`
 }
 
+// TODO: Reorganize
 type ServiceSpec struct {
   Type corev1.ServiceType `json:"type,omitempty"`
 
@@ -106,4 +109,27 @@ type ServiceSpec struct {
 
 func init() {
   SchemeBuilder.Register(&Phare{}, &PhareList{})
+}
+
+type ToolChainSpec struct {
+  HTTPRoute         HTTPRouteSpec         `json:"httpRoute,omitempty"`
+  HealthCheckPolicy HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
+  GCPBackendPolicy  GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
+}
+
+// type HTTPRoute struct {
+//   Spec HTTPRouteSpec `json:"spec,omitempty"`
+// }
+
+type HTTPRouteSpec struct {
+  Hostnames []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`
+  ParentRef []gatewayv1beta1.ParentReference `json:"parentRefs,omitempty"` // Ensure this is named correctly
+  // +kubebuilder:validation:MaxItems=10
+  Rules []gatewayv1beta1.HTTPRouteRule `json:"rules,omitempty"`
+}
+
+type HealthCheckPolicySpec struct {
+}
+
+type GCPBackendPolicySpec struct {
 }

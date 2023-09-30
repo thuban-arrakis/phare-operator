@@ -77,7 +77,7 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
   metadataLabels := map[string]string{
     "app":                          phare.Name,
     "app.kubernetes.io/created-by": "phare-controller",
-    // "version":                      phare.Spec.Microservice.Image.Tag, // Use later for rolling updates
+    // "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
   }
 
   // Only use the "app" label for the spec level
@@ -95,7 +95,7 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
       Selector: &metav1.LabelSelector{
         MatchLabels: specLabels,
       },
-      Replicas: &phare.Spec.Microservice.ReplicaCount,
+      Replicas: &phare.Spec.MicroService.ReplicaCount,
       Template: corev1.PodTemplateSpec{
         ObjectMeta: metav1.ObjectMeta{
           Labels: specLabels,
@@ -104,13 +104,13 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
           Containers: []corev1.Container{
             {
               Name:  phare.Name,
-              Image: phare.Spec.Microservice.Image.Repository + ":" + phare.Spec.Microservice.Image.Tag,
+              Image: phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
             },
           },
-          InitContainers: phare.Spec.Microservice.InitContainers,
-          Affinity:       phare.Spec.Microservice.Affinity,
-          Tolerations:    phare.Spec.Microservice.Tolerations,
-          Volumes:        phare.Spec.Microservice.Volumes,
+          InitContainers: phare.Spec.MicroService.InitContainers,
+          Affinity:       phare.Spec.MicroService.Affinity,
+          Tolerations:    phare.Spec.MicroService.Tolerations,
+          Volumes:        phare.Spec.MicroService.Volumes,
         },
       },
     },

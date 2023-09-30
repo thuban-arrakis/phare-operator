@@ -12,7 +12,7 @@ import (
 
 // setEnvVars sets the environment variables for the pod template
 // using the provided Phare spec.
-func setEnvVars(phareSpec v1beta1.MicroserviceSpec, container *corev1.Container) error {
+func setEnvVars(phareSpec v1beta1.MicroServiceSpec, container *corev1.Container) error {
   // If no env vars are defined in the spec, return early
   if len(phareSpec.Env) == 0 {
     return nil

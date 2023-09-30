@@ -88,7 +88,12 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
     return ctrl.Result{}, err
   }
 
-  switch phare.Spec.Microservice.Kind {
+  // Reconcile (actually print) HTPPRoute
+  if _, err := r.reconcileHttpRoute(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
+  switch phare.Spec.MicroService.Kind {
   case "Deployment":
     // Logic for handling Deployment
     return r.reconcileDeployment(ctx, req, phare)
@@ -96,7 +101,7 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
     // Logic for handling StatefulSet
     return r.reconcileStatefulSet(ctx, req, phare)
   default:
-    return ctrl.Result{}, fmt.Errorf("unsupported kind: %s", phare.Spec.Microservice.Kind)
+    return ctrl.Result{}, fmt.Errorf("unsupported kind: %s", phare.Spec.MicroService.Kind)
   }
 }
 
