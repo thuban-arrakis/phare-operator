@@ -2,7 +2,6 @@ package controllers
 
 import (
   "context"
-  "fmt"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   "github.com/localcorp/phare-controller/pkg/validator"
@@ -10,10 +9,11 @@ import (
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+  "k8s.io/apimachinery/pkg/runtime/schema"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
   gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
-  "sigs.k8s.io/yaml"
 )
 
 func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
@@ -93,15 +93,92 @@ func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1
     },
   }
 
-  // Convert httpRoute to YAML and print it
-  yamlData, err := yaml.Marshal(httpRoute)
-  if err != nil {
-    fmt.Println("Failed to Marshal HTTPRoute to YAML:", err)
+  // Set the controller reference so that we can correlate the HTTPRoute to the Phare resource
+  if err := ctrl.SetControllerReference(phare, httpRoute, r.Scheme); err != nil {
+    r.Log.Error(err, "Failed to set controller reference for HTTPRoute")
     return httpRoute
   }
-
-  fmt.Println("Resulting HTTPRoute YAML:")
-  fmt.Println(string(yamlData))
-
   return httpRoute
+}
+
+func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *unstructured.Unstructured {
+  metadataLabels := map[string]string{
+    "kustomize.toolkit.fluxcd.io/name":      "apps",
+    "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+  }
+
+  gcpBackendPolicy := &unstructured.Unstructured{
+    Object: map[string]interface{}{
+      "apiVersion": "networking.gke.io/v1",
+      "kind":       "GCPBackendPolicy",
+      "metadata": map[string]interface{}{
+        "name":      phare.Name,
+        "namespace": phare.Namespace,
+        "labels":    metadataLabels,
+      },
+      "spec": phare.Spec.ToolChain.GCPBackendPolicy,
+    },
+  }
+  if err := ctrl.SetControllerReference(phare, gcpBackendPolicy, r.Scheme); err != nil {
+    r.Log.Error(err, "Failed to set controller reference for GCPBackendPolicy")
+    return gcpBackendPolicy
+  }
+  return gcpBackendPolicy
+}
+
+func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+  existingGCPBackendPolicy := &unstructured.Unstructured{}
+
+  existingGCPBackendPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+    Group:   "networking.gke.io",
+    Version: "v1",
+    Kind:    "GCPBackendPolicy",
+  })
+
+  desired := r.desiredGCPBackendPolicy(&phare)
+  err := r.Get(ctx, req.NamespacedName, existingGCPBackendPolicy)
+
+  // Convert existing and desired spec to YAML for comparison
+  existingGCPBackendPolicySpecYAML := toYAML(existingGCPBackendPolicy.Object["spec"])
+  desiredGCPBackendPolicySpecYAML := toYAML(desired.Object["spec"])
+
+  if err != nil {
+    if errors.IsNotFound(err) {
+      // GCPBackendPolicy doesn't exist, create it
+      if err := r.Create(ctx, desired); err != nil {
+        return ctrl.Result{}, err
+      }
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created GCPBackendPolicy %s", desired.GetName())
+      return ctrl.Result{}, nil
+    }
+    return ctrl.Result{}, err
+  }
+
+  isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredGCPBackendPolicySpecYAML, existingGCPBackendPolicySpecYAML)
+
+  if !isValid {
+    r.Log.Info("GCPBackendPolicy does not match the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
+
+    // Log the diff for debugging
+    diffOutput := yamldiff.Diff(validator.PrintMap(modifiedCurrentMap), validator.PrintMap(desiredMap))
+    r.Log.Info("Diff between current and desired configuration", "diff", diffOutput)
+
+    patch := client.MergeFrom(existingGCPBackendPolicy.DeepCopy())
+    r.Log.Info("Updating GCPBackendPolicy", "GCPBackendPolicy.Namespace", existingGCPBackendPolicy.GetNamespace(), "GCPBackendPolicy.Name", existingGCPBackendPolicy.GetName())
+
+    // Copy desired service's spec to existingGCPBackendPolicy
+    existingGCPBackendPolicy.Object["spec"] = desired.Object["spec"]
+    // Add or update labels in the existingGCPBackendPolicy
+    for key, value := range desired.GetLabels() {
+      existingGCPBackendPolicy.SetLabels(map[string]string{key: value})
+    }
+
+    if err := r.Patch(ctx, existingGCPBackendPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
+      return ctrl.Result{}, err
+    }
+    return ctrl.Result{}, nil
+  }
+
+  r.Log.Info("GCPBackendPolicy matches the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
+  return ctrl.Result{}, nil
 }

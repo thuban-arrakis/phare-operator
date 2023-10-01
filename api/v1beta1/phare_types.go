@@ -17,36 +17,62 @@ limitations under the License.
 package v1beta1
 
 import (
-  corev1 "k8s.io/api/core/v1"
+  v1 "k8s.io/api/core/v1"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
   gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 // PhareSpec defines the desired state of Phare.
 type PhareSpec struct {
-  MicroService MicroServiceSpec  `json:"microservice"`
-  Service      ServiceSpec       `json:"service,omitempty"`
-  Config       map[string]string `json:"config,omitempty"` // TODO: I think it should be in toolchan
-  ToolChain    ToolChainSpec     `json:"toolchain,omitempty"`
+  MicroService MicroServiceSpec `json:"microservice"`
+  Service      *ServiceSpec     `json:"service,omitempty"`
+  Config       *ConfigSpec      `json:"config,omitempty"` // TODO: I think it should be in toolchan
+  ToolChain    *ToolChainSpec   `json:"toolchain,omitempty"`
+}
+
+type ConfigSpec struct {
+  Data map[string]string `json:"data,omitempty"`
 }
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroServiceSpec struct {
-  Kind            string              `json:"kind"`
-  ReplicaCount    int32               `json:"replicaCount,omitempty"`
-  Image           ImageSpec           `json:"image"`
-  ImagePullPolicy corev1.PullPolicy   `json:"imagePullPolicy,omitempty"`
-  Env             []corev1.EnvVar     `json:"env,omitempty"`
-  Affinity        *corev1.Affinity    `json:"affinity,omitempty"`
-  Tolerations     []corev1.Toleration `json:"tolerations,omitempty"`
-  InitContainers  []corev1.Container  `json:"initContainers,omitempty"`
-  Volumes         []corev1.Volume     `json:"volumes,omitempty"`
+  Kind            string          `json:"kind"`
+  ReplicaCount    int32           `json:"replicaCount,omitempty"`
+  Image           ImageSpec       `json:"image"`
+  ImagePullPolicy v1.PullPolicy   `json:"imagePullPolicy,omitempty"`
+  Env             []v1.EnvVar     `json:"env,omitempty"`
+  Affinity        *v1.Affinity    `json:"affinity,omitempty"`
+  Tolerations     []v1.Toleration `json:"tolerations,omitempty"`
+  Volumes         []v1.Volume     `json:"volumes,omitempty"`
+  Sidecars        []Sidecar       `json:"sidecars,omitempty"`
+  InitContainers  []v1.Container  `json:"initContainers,omitempty"`
+}
+
+// Sidecar defines a container to be run in the same pod.
+type Sidecar struct {
+  *Resources  `json:"resources,omitempty"`
+  Name        string             `json:"name,omitempty"`
+  DockerImage string             `json:"image,omitempty"`
+  Ports       []v1.ContainerPort `json:"ports,omitempty"`
+  Env         []v1.EnvVar        `json:"env,omitempty"`
 }
 
 // ImageSpec holds information about the microservice's container image.
 type ImageSpec struct {
   Repository string `json:"repository"`
   Tag        string `json:"tag"`
+}
+
+// ResourceDescription describes CPU and memory resources defined for a cluster.
+type ResourceDescription struct {
+  CPU    string `json:"cpu"`
+  Memory string `json:"memory"`
+}
+
+// Resources describes requests and limits for the cluster resouces.
+type Resources struct {
+  ResourceRequests ResourceDescription `json:"requests,omitempty"`
+  ResourceLimits   ResourceDescription `json:"limits,omitempty"`
 }
 
 // PharePhase represents the phases of Phare processing.
@@ -98,9 +124,9 @@ type PhareList struct {
 
 // TODO: Reorganize
 type ServiceSpec struct {
-  Type corev1.ServiceType `json:"type,omitempty"`
+  Type v1.ServiceType `json:"type,omitempty"`
 
-  Ports []corev1.ServicePort `json:"ports,omitempty"`
+  Ports []v1.ServicePort `json:"ports,omitempty"`
 
   Annotations map[string]string `json:"annotations,omitempty"`
 
@@ -112,9 +138,9 @@ func init() {
 }
 
 type ToolChainSpec struct {
-  HTTPRoute         HTTPRouteSpec         `json:"httpRoute,omitempty"`
-  HealthCheckPolicy HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
-  GCPBackendPolicy  GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
+  HTTPRoute         *HTTPRouteSpec         `json:"httpRoute,omitempty"`
+  HealthCheckPolicy *HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
+  GCPBackendPolicy  *GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
 }
 
 // type HTTPRoute struct {
@@ -130,6 +156,23 @@ type HTTPRouteSpec struct {
 
 type HealthCheckPolicySpec struct {
 }
-
 type GCPBackendPolicySpec struct {
+  Default   GCPBackendPolicyDefaultSpec   `json:"default,omitempty"`
+  TargetRef GCPBackendPolicyTargetRefSpec `json:"targetRef,omitempty"`
+}
+
+type GCPBackendPolicyDefaultSpec struct {
+  Logging    GCPBackendPolicyLoggingSpec `json:"logging,omitempty"`
+  TimeoutSec int                         `json:"timeoutSec,omitempty"`
+}
+
+type GCPBackendPolicyLoggingSpec struct {
+  Enabled    bool `json:"enabled"`
+  SampleRate int  `json:"sampleRate"`
+}
+
+type GCPBackendPolicyTargetRefSpec struct {
+  Group string `json:"group"`
+  Kind  string `json:"kind"`
+  Name  string `json:"name"`
 }

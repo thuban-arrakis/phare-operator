@@ -128,7 +128,7 @@ func (r *PhareReconciler) desiredDeployment(phare *pharev1beta1.Phare) *apps.Dep
   }
 
   // Check if the spec.config is not empty
-  if phare.Spec.Config != nil && len(phare.Spec.Config) > 0 {
+  if phare.Spec.Config != nil && len(phare.Spec.Config.Data) > 0 {
     // Add ConfigMap as a volume to the Pod template
     deploymentVolume := corev1.Volume{
       Name: "config-volume",

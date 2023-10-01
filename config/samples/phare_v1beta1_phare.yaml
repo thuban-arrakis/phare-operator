@@ -13,6 +13,11 @@ spec:
     imagePullPolicy: IfNotPresent
     kind: StatefulSet
     replicaCount: 1
+  # service:
+  #   ports:
+  #     - name: http
+  #       port: 80
+  #       targetPort: 80
   # toolchain:
   #   httpRoute:
   #     hostnames:
@@ -34,89 +39,9 @@ spec:
   #       - path:
   #           type: PathPrefix
   #           value: /
-    # gcpBackendPolicy:
-    # healthCheckPolicy:
-  #   env:
-  #     - name: PHARE_CONFIG
-  #       value: /etc/phare/config.js
-  #     - name: PHARE_CONFIG_PATH
-  #       valueFrom:
-  #         configMapKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #     - name: PHARE_CONFIG_KEY
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #   affinity:
-  #     podAntiAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         - labelSelector:
-  #             matchExpressions:
-  #               - key: app.kubernetes.io/name
-  #                 operator: In
-  #                 values:
-  #                   - phare
-  #           topologyKey: kubernetes.io/hostname
-  #     nodeAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         nodeSelectorTerms:
-  #           - matchExpressions:
-  #               - key: node-role.kubernetes.io/master
-  #                 operator: DoesNotExist
-  #   tolerations:
-  #     - key: node-role.kubernetes.io/master
-  #       operator: Exists
-  #       effect: NoSchedule
-  #  initContainers:
-  #   image:
-  #     repository: busybox
-  #     tag: 1.32.1
-  #   imagePullPolicy: IfNotPresent
-  #   command: ["/bin/sh"]
-  #   args: ["-c", "echo 'init container'"]
-  #   env:
-  #     - name: PHARE_CONFIG
-  #       value: /etc/phare/config.js
-  #     - name: PHARE_CONFIG_PATH
-  #       valueFrom:
-  #         configMapKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #     - name: PHARE_CONFIG_KEY
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #   affinity:
-  #     podAntiAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         - labelSelector:
-  #             matchExpressions:
-  #               - key: app.kubernetes.io/name
-  #                 operator: In
-  #                 values:
-  #                   - phare
-  #           topologyKey: kubernetes.io/hostname
-  #     nodeAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         nodeSelectorTerms:
-  #           - matchExpressions:
-  #               - key: node-role.kubernetes.io/master
-  #                 operator: DoesNotExist
-  #   tolerations:
-  #     - key: node-role.kubernetes.io/master
-  #       operator: Exists
-  #       effect: NoSchedule
-  service:
-    ports:
-      - name: http
-        port: 80
-        targetPort: 80
-  config:
-    key: value
-    config.js: |
-      module.exports = {
-        key: 'value'
-      }
+  # config:
+  #   key: value
+  #   config.js: |
+  #     module.exports = {
+  #       key: 'value'
+  #     }
