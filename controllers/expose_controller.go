@@ -182,3 +182,90 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
   r.Log.Info("GCPBackendPolicy matches the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
   return ctrl.Result{}, nil
 }
+
+func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *unstructured.Unstructured {
+  if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.HealthCheckPolicy == nil {
+    return nil
+  }
+
+  // metadataLabels := map[string]string{
+  //   // Define your labels here
+  // }
+
+  // Initialize the HealthCheckPolicy
+  healthCheckPolicy := &unstructured.Unstructured{
+    Object: map[string]interface{}{
+      "apiVersion": "networking.gke.io/v1",
+      "kind":       "HealthCheckPolicy",
+      "metadata": map[string]interface{}{
+        "name":      phare.Name,
+        "namespace": phare.Namespace,
+        // "labels":    metadataLabels,
+      },
+      "spec": phare.Spec.ToolChain.HealthCheckPolicy,
+    },
+  }
+  if err := ctrl.SetControllerReference(phare, healthCheckPolicy, r.Scheme); err != nil {
+    r.Log.Error(err, "Failed to set controller reference for HealthCheckPolicy")
+    return healthCheckPolicy
+  }
+  return healthCheckPolicy
+}
+
+func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+  existingHealthCheckPolicy := &unstructured.Unstructured{}
+
+  existingHealthCheckPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+    Group:   "networking.gke.io",
+    Version: "v1",
+    Kind:    "GCPBackendPolicy",
+  })
+
+  desired := r.desiredHealthCheckPolicy(&phare)
+  err := r.Get(ctx, req.NamespacedName, existingHealthCheckPolicy)
+
+  // Convert existing and desired spec to YAML for comparison
+  existingHealthCheckPolicySpecYAML := toYAML(existingHealthCheckPolicy)
+  desiredHealthCheckPolicySpecYAML := toYAML(desired)
+
+  if err != nil {
+    if errors.IsNotFound(err) {
+      // HealthCheckPolicy doesn't exist, create it
+      if err := r.Create(ctx, desired); err != nil {
+        return ctrl.Result{}, err
+      }
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created HealthCheckPolicy %s", desired.GetName())
+      return ctrl.Result{}, nil
+    }
+    return ctrl.Result{}, err
+  }
+
+  isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredHealthCheckPolicySpecYAML, existingHealthCheckPolicySpecYAML)
+
+  if !isValid {
+    r.Log.Info("HealthCheckPolicy does not match the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
+
+    // Log the diff for debugging
+    diffOutput := yamldiff.Diff(validator.PrintMap(modifiedCurrentMap), validator.PrintMap(desiredMap))
+    r.Log.Info("Diff between current and desired configuration", "diff", diffOutput)
+
+    patch := client.MergeFrom(existingHealthCheckPolicy.DeepCopy())
+    r.Log.Info("Updating HealthCheckPolicy", "HealthCheckPolicy.Namespace", existingHealthCheckPolicy.GetNamespace(), "HealthCheckPolicy.Name", existingHealthCheckPolicy.GetName())
+
+    // Copy desired service's spec to existingHealthCheckPolicy
+    existingHealthCheckPolicy.Object["spec"] = desired.Object["spec"]
+    // Add or update labels in the existingHealthCheckPolicy
+    for key, value := range desired.GetLabels() {
+      existingHealthCheckPolicy.SetLabels(map[string]string{key: value})
+    }
+
+    if err := r.Patch(ctx, existingHealthCheckPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
+      return ctrl.Result{}, err
+    }
+    return ctrl.Result{}, nil
+  } else {
+    r.Log.Info("HealthCheckPolicy matches the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
+  }
+
+  return ctrl.Result{}, nil
+}

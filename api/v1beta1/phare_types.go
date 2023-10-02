@@ -1,17 +1,17 @@
 /*
-Copyright 2023.
+  Copyright 2023.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+      http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
 */
 
 package v1beta1
@@ -36,16 +36,17 @@ type ConfigSpec struct {
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroServiceSpec struct {
-  Kind            string          `json:"kind"`
-  ReplicaCount    int32           `json:"replicaCount,omitempty"`
-  Image           ImageSpec       `json:"image"`
-  ImagePullPolicy v1.PullPolicy   `json:"imagePullPolicy,omitempty"`
-  Env             []v1.EnvVar     `json:"env,omitempty"`
-  Affinity        *v1.Affinity    `json:"affinity,omitempty"`
-  Tolerations     []v1.Toleration `json:"tolerations,omitempty"`
-  Volumes         []v1.Volume     `json:"volumes,omitempty"`
-  Sidecars        []Sidecar       `json:"sidecars,omitempty"`
-  InitContainers  []v1.Container  `json:"initContainers,omitempty"`
+  Kind            string               `json:"kind"`
+  ReplicaCount    int32                `json:"replicaCount,omitempty"`
+  Image           ImageSpec            `json:"image"`
+  ImagePullPolicy v1.PullPolicy        `json:"imagePullPolicy,omitempty"`
+  Env             []v1.EnvVar          `json:"env,omitempty"`
+  Affinity        *v1.Affinity         `json:"affinity,omitempty"`
+  Tolerations     []v1.Toleration      `json:"tolerations,omitempty"`
+  Volumes         []v1.Volume          `json:"volumes,omitempty"`
+  Sidecars        []Sidecar            `json:"sidecars,omitempty"`
+  InitContainers  []v1.Container       `json:"initContainers,omitempty"`
+  deleteOptions   metav1.DeleteOptions `json:"deleteOptions,omitempty"`
 }
 
 // Sidecar defines a container to be run in the same pod.
@@ -142,20 +143,61 @@ type ToolChainSpec struct {
   HealthCheckPolicy *HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
   GCPBackendPolicy  *GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
 }
-
-// type HTTPRoute struct {
-//   Spec HTTPRouteSpec `json:"spec,omitempty"`
-// }
-
 type HTTPRouteSpec struct {
   Hostnames []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`
   ParentRef []gatewayv1beta1.ParentReference `json:"parentRefs,omitempty"` // Ensure this is named correctly
   // +kubebuilder:validation:MaxItems=10
   Rules []gatewayv1beta1.HTTPRouteRule `json:"rules,omitempty"`
 }
-
 type HealthCheckPolicySpec struct {
+  Default   DefaultCheck `json:"default"`
+  TargetRef TargetRef    `json:"targetRef"`
 }
+
+type DefaultCheck struct {
+  CheckIntervalSec   string            `json:"checkIntervalSec"`
+  TimeoutSec         string            `json:"timeoutSec"`
+  HealthyThreshold   string            `json:"healthyThreshold"`
+  UnhealthyThreshold string            `json:"unhealthyThreshold"`
+  LogConfig          LogConfig         `json:"logConfig"`
+  Config             HealthCheckConfig `json:"config"`
+}
+
+type LogConfig struct {
+  Enabled string `json:"enabled"`
+}
+
+type HealthCheckConfig struct {
+  Type             string      `json:"type"`
+  HTTPHealthCheck  HealthCheck `json:"httpHealthCheck"`
+  HTTPSHealthCheck HealthCheck `json:"httpsHealthCheck"`
+  GRPCCheck        GRPCCheck   `json:"grpcHealthCheck"`
+  HTTP2Check       HealthCheck `json:"http2HealthCheck"`
+}
+
+type HealthCheck struct {
+  PortSpecification string `json:"portSpecification"`
+  Port              string `json:"port"`
+  PortName          string `json:"portName"`
+  Host              string `json:"host"`
+  RequestPath       string `json:"requestPath"`
+  Response          string `json:"response"`
+  ProxyHeader       string `json:"proxyHeader"`
+}
+
+type GRPCCheck struct {
+  GRPCServiceName   string `json:"grpcServiceName"`
+  PortSpecification string `json:"portSpecification"`
+  Port              string `json:"port"`
+  PortName          string `json:"portName"`
+}
+
+type TargetRef struct {
+  Group string `json:"group"`
+  Kind  string `json:"kind"`
+  Name  string `json:"name"`
+}
+
 type GCPBackendPolicySpec struct {
   Default   GCPBackendPolicyDefaultSpec   `json:"default,omitempty"`
   TargetRef GCPBackendPolicyTargetRefSpec `json:"targetRef,omitempty"`

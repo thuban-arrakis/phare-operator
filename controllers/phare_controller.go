@@ -23,7 +23,9 @@ import (
   appsv1 "k8s.io/api/apps/v1"
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
+  "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
   "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/apimachinery/pkg/runtime/schema"
   "k8s.io/client-go/tools/record"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
@@ -159,28 +161,36 @@ func (r *PhareReconciler) handleGCPBackendPolicy(ctx context.Context, req ctrl.R
     _, err := r.reconcileGCPBackendPolicy(ctx, req, phare)
     return err
   } else {
-    return nil
+    return r.cleanupGCPBackendPolicy(ctx, phare)
   }
 }
 
-// func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pharev1beta1.Phare) error {
-//   gcpBackendPolicyList := &unstructured.UnstructuredList{}
-//   if err := r.List(ctx, gcpBackendPolicyList, client.InNamespace(phare.Namespace)); err != nil {
-//     return err
-//   }
+func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pharev1beta1.Phare) error {
+  gcpBackendPolicyList := &unstructured.UnstructuredList{}
 
-//   for _, gcpBackendPolicy := range gcpBackendPolicyList.Items {
-//     for _, ownerRef := range gcpBackendPolicy.OwnerReference {
-//       if ownerRef.UID == phare.UID {
-//         if err := r.Delete(ctx, &gcpBackendPolicy); err != nil {
-//           r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
-//           return err
-//         }
-//       }
-//     }
-//   }
-//   return nil
-// }
+  gcpBackendPolicyList.SetGroupVersionKind(schema.GroupVersionKind{
+    Group:   "networking.gke.io",
+    Version: "v1",
+    Kind:    "GCPBackendPolicy",
+  })
+
+  if err := r.List(ctx, gcpBackendPolicyList, client.InNamespace(phare.Namespace)); err != nil {
+    return err
+  }
+
+  for _, gcpBackendPolicy := range gcpBackendPolicyList.Items {
+    r.Log.Info("Processing GCPBackendPolicy", "name", gcpBackendPolicy.GetName(), "namespace", gcpBackendPolicy.GetNamespace(), "kind", gcpBackendPolicy.GetKind())
+    for _, ownerRef := range gcpBackendPolicy.GetOwnerReferences() {
+      if ownerRef.UID == phare.UID {
+        if err := r.Delete(ctx, &gcpBackendPolicy); err != nil {
+          r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
+          return err
+        }
+      }
+    }
+  }
+  return nil
+}
 
 func (r *PhareReconciler) handleService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
   if phare.Spec.Service != nil {
