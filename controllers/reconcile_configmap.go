@@ -17,13 +17,18 @@ import (
 
 func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
 
+  var configData map[string]string
+  if phare.Spec.Config != nil {
+    configData = phare.Spec.Config.Data
+  }
+
   // 1. Construct Desired ConfigMap
   desiredCM := &corev1.ConfigMap{
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name + "-config",
       Namespace: phare.Namespace,
     },
-    Data: phare.Spec.Config,
+    Data: configData,
   }
 
   // Set Phare CR as the owner of this ConfigMap

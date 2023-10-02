@@ -6,6 +6,10 @@ import (
   "gopkg.in/yaml.v3"
 )
 
+// FIX THIS SHIT LOGIC LATER. Diff result based on removing lines from current state, compare with desired ant return transformed map.
+// Which causes issue when for example kubectl edit resource was called & that causes changes isn't detected.
+// My main goal at this point is to implement and save basic functionallity with less effort.
+
 // ValidateYaml takes two YAML strings and returns true if they match according to the criteria defined in compareSpecs.
 // It now also returns the processed maps.
 func ValidateYaml(desiredYaml, currentYaml string) (bool, map[string]interface{}, map[string]interface{}) {
@@ -50,6 +54,7 @@ func filterEmptyFields(data map[string]interface{}) {
   }
 }
 
+// I was talking about this piece of crap:
 // cleanMapBasedOnAnother removes keys from baseMap that aren't present in referenceMap.
 func cleanMapBasedOnAnother(baseMap, referenceMap map[string]interface{}) map[string]interface{} {
   for k, v := range baseMap {

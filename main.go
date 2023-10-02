@@ -33,6 +33,7 @@ import (
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	"github.com/localcorp/phare-controller/controllers"
+	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -45,6 +46,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(pharev1beta1.AddToScheme(scheme))
+	utilruntime.Must(gatewayv1beta1.Install(scheme))
+
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -66,9 +69,9 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Scheme: scheme,
+		// MetricsBindAddress:     metricsAddr, // TODO: enable metrics later
+		// Port:                   9443,        // TODO: investigate this later
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "d65451e7.localcorp.internal",

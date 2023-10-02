@@ -20,20 +20,20 @@ import (
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
   existingStatefulSet := &apps.StatefulSet{}
-  desired := r.desiredStatefulSet(&phare)
+  desiredStatefulSet := r.desiredStatefulSet(&phare)
   err := r.Get(ctx, req.NamespacedName, existingStatefulSet)
 
-  existingStatefulSetSpec := toYAML(existingStatefulSet.Spec)
-  desiredStatefulSetSpec := toYAML(desired.Spec)
+  existingStatefulSetSpec := toYAML(existingStatefulSet)
+  desiredStatefulSetSpec := toYAML(desiredStatefulSet)
 
   if err != nil {
     if errors.IsNotFound(err) {
       // StatefulSet doesn't exist, create it
-      if err := r.Create(ctx, desired); err != nil {
+      if err := r.Create(ctx, desiredStatefulSet); err != nil {
         r.Log.Info("Error creating StatefulSet")
         return ctrl.Result{}, err
       }
-      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created StatefulSet %s", desired.Name)
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created StatefulSet %s", desiredStatefulSet.Name)
       return ctrl.Result{}, nil
     } else {
       r.Log.Info("Error getting StatefulSet")
@@ -43,31 +43,44 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, req ctrl.Req
     isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredStatefulSetSpec, existingStatefulSetSpec)
 
     if !isValid {
-      r.Log.Info("StatefulSet does not match the desired configuration", "StatefulSet.Namespace", desired.Namespace, "StatefulSet.Name", desired.Name)
+      r.Log.Info("StatefulSet does not match the desired configuration", "StatefulSet.Namespace", desiredStatefulSet.Namespace, "StatefulSet.Name", desiredStatefulSet.Name)
+
       map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
       map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
-      diffOutput := yamldiff.Diff(map1, map2)        // Debugging purposes only
-      fmt.Println(diffOutput)                        // Debugging purposes only
+
+      diffOutput := yamldiff.Diff(map1, map2) // Debugging purposes only
+      fmt.Println(diffOutput)                 // Debugging purposes only
+
       patch := client.MergeFrom(existingStatefulSet.DeepCopy())
       r.Log.Info("Updating StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
-      existingStatefulSet.Spec = desired.Spec
+
+      // Copy desired StatefulSet's metadata and spec to existingStatefulSet
+      existingStatefulSet.ObjectMeta = desiredStatefulSet.ObjectMeta
+      existingStatefulSet.Spec = desiredStatefulSet.Spec
+
       if err := r.Patch(ctx, existingStatefulSet, patch, client.FieldOwner("phare-controller")); err != nil {
         r.Log.Info("Error patching StatefulSet")
         return ctrl.Result{}, err
       }
       return ctrl.Result{}, nil
     } else {
-      r.Log.Info("StatefulSet matches the desired configuration", "StatefulSet.Namespace", desired.Namespace, "SetatefilSet.Name", desired.Name)
+      r.Log.Info("StatefulSet matches the desired configuration", "StatefulSet.Namespace", desiredStatefulSet.Namespace, "StatefulSet.Name", desiredStatefulSet.Name)
     }
   }
-
   return ctrl.Result{}, nil
 }
 
 func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.StatefulSet {
-  replicaCount := phare.Spec.Microservice.ReplicaCount
 
-  labels := map[string]string{
+  // Keep the same labels at the metadata level
+  metadataLabels := map[string]string{
+    "app":                          phare.Name,
+    "app.kubernetes.io/created-by": "phare-controller",
+    // "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
+  }
+
+  // Only use the "app" label for the spec level
+  specLabels := map[string]string{
     "app": phare.Name,
   }
 
@@ -75,29 +88,35 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name,
       Namespace: phare.Namespace,
+      Labels:    metadataLabels,
     },
     Spec: apps.StatefulSetSpec{
       Selector: &metav1.LabelSelector{
-        MatchLabels: labels,
+        MatchLabels: specLabels,
       },
-      Replicas: &replicaCount,
+      Replicas: &phare.Spec.MicroService.ReplicaCount,
       Template: corev1.PodTemplateSpec{
         ObjectMeta: metav1.ObjectMeta{
-          Labels: labels,
+          Labels: specLabels,
         },
         Spec: corev1.PodSpec{
           Containers: []corev1.Container{
             {
               Name:  phare.Name,
-              Image: phare.Spec.Microservice.Image.Repository + ":" + phare.Spec.Microservice.Image.Tag,
+              Image: phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
             },
           },
+          InitContainers: phare.Spec.MicroService.InitContainers,
+          Affinity:       phare.Spec.MicroService.Affinity,
+          Tolerations:    phare.Spec.MicroService.Tolerations,
+          Volumes:        phare.Spec.MicroService.Volumes,
         },
       },
     },
   }
 
   // Set the owner reference
+  // Think about moving this to `statefulSet.ObjectMeta.OwnerReferences`
   statefulSet.OwnerReferences = []metav1.OwnerReference{
     {
       APIVersion: phare.APIVersion, // Ensure this matches the API version of your Phare CRD
@@ -109,7 +128,7 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
   }
 
   // Check if the spec.config is not empty
-  if phare.Spec.Config != nil && len(phare.Spec.Config) > 0 {
+  if phare.Spec.Config != nil && len(phare.Spec.Config.Data) > 0 {
     // Add ConfigMap as a volume to the Pod template
     statefulSetVolume := corev1.Volume{
       Name: "config-volume",

@@ -23,17 +23,19 @@ import (
   appsv1 "k8s.io/api/apps/v1"
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
+  "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
   "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/apimachinery/pkg/runtime/schema"
   "k8s.io/client-go/tools/record"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
-  "sigs.k8s.io/controller-runtime/pkg/log"
 
   // TODO(user): Event recorder is required to emit Events.
   // "k8s.io/client-go/tools/record"
 
   "github.com/go-logr/logr"
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+  gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 // PhareReconciler reconciles a Phare object
@@ -60,43 +62,171 @@ type PhareReconciler struct {
 // the user.
 //
 // For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.1/pkg/reconcile
 func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-  _ = log.FromContext(ctx)
-
   var phare pharev1beta1.Phare
 
-  // log := r.Log.WithValues("phare", req.NamespacedName)
-  // log.Info("Reconciling Phare")
+  if err := r.fetchPhareResource(ctx, req, &phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
-  if err := r.Get(ctx, req.NamespacedName, &phare); err != nil {
+  if err := r.handleConfigMap(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
+  if _, err := r.handleService(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
+  if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
+  if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
+
+  return r.reconcileMicroService(ctx, req, phare)
+}
+
+func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Request, phare *pharev1beta1.Phare) error {
+  if err := r.Get(ctx, req.NamespacedName, phare); err != nil {
     if errors.IsNotFound(err) {
       // Object not found, return. Created objects are automatically garbage collected.
-      return ctrl.Result{}, nil
+      return nil
     }
-    // Error reading the object - requeue the request.
-    return ctrl.Result{}, err
+    // Error reading the object.
+    return err
+  }
+  return nil
+}
+
+func (r *PhareReconciler) handleConfigMap(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
+  if phare.Spec.Config != nil {
+    return r.reconcileConfigMap(ctx, phare)
+  } else {
+    return r.cleanupConfigMap(ctx, phare)
+  }
+}
+
+func (r *PhareReconciler) cleanupConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
+  configMapList := &corev1.ConfigMapList{}
+  if err := r.List(ctx, configMapList, client.InNamespace(phare.Namespace)); err != nil {
+    return err
   }
 
-  if err := r.reconcileConfigMap(ctx, phare); err != nil {
-    // Handle error and possibly requeue
-    return ctrl.Result{}, err
+  for _, configMap := range configMapList.Items {
+    for _, ownerRef := range configMap.OwnerReferences {
+      if ownerRef.UID == phare.UID {
+        if err := r.Delete(ctx, &configMap); err != nil {
+          r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted ConfigMap %s", configMap.Name)
+          return err
+        }
+      }
+    }
+  }
+  return nil
+}
+
+func (r *PhareReconciler) handleHTTPRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
+  if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.HTTPRoute != nil {
+    _, err := r.reconcileHttpRoute(ctx, req, phare)
+    return err
+  } else {
+    return r.cleanupHTTPRoute(ctx, phare)
+  }
+}
+
+func (r *PhareReconciler) cleanupHTTPRoute(ctx context.Context, phare pharev1beta1.Phare) error {
+  httpRouteList := &gatewayv1beta1.HTTPRouteList{}
+  if err := r.List(ctx, httpRouteList, client.InNamespace(phare.Namespace)); err != nil {
+    return err
   }
 
-  // Reconcile Service
-  if _, err := r.reconcileService(ctx, req, phare); err != nil {
-    return ctrl.Result{}, err
+  for _, httpRoute := range httpRouteList.Items {
+    for _, ownerRef := range httpRoute.OwnerReferences {
+      if ownerRef.UID == phare.UID {
+        if err := r.Delete(ctx, &httpRoute); err != nil {
+          r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", phare.Name)
+          return err
+        }
+      }
+    }
+  }
+  return nil
+}
+
+func (r *PhareReconciler) handleGCPBackendPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
+  if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.GCPBackendPolicy != nil {
+    _, err := r.reconcileGCPBackendPolicy(ctx, req, phare)
+    return err
+  } else {
+    return r.cleanupGCPBackendPolicy(ctx, phare)
+  }
+}
+
+func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pharev1beta1.Phare) error {
+  gcpBackendPolicyList := &unstructured.UnstructuredList{}
+
+  gcpBackendPolicyList.SetGroupVersionKind(schema.GroupVersionKind{
+    Group:   "networking.gke.io",
+    Version: "v1",
+    Kind:    "GCPBackendPolicy",
+  })
+
+  if err := r.List(ctx, gcpBackendPolicyList, client.InNamespace(phare.Namespace)); err != nil {
+    return err
   }
 
-  switch phare.Spec.Microservice.Kind {
+  for _, gcpBackendPolicy := range gcpBackendPolicyList.Items {
+    r.Log.Info("Processing GCPBackendPolicy", "name", gcpBackendPolicy.GetName(), "namespace", gcpBackendPolicy.GetNamespace(), "kind", gcpBackendPolicy.GetKind())
+    for _, ownerRef := range gcpBackendPolicy.GetOwnerReferences() {
+      if ownerRef.UID == phare.UID {
+        if err := r.Delete(ctx, &gcpBackendPolicy); err != nil {
+          r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
+          return err
+        }
+      }
+    }
+  }
+  return nil
+}
+
+func (r *PhareReconciler) handleService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+  if phare.Spec.Service != nil {
+    return r.reconcileService(ctx, req, phare)
+  } else {
+    return ctrl.Result{}, r.cleanupService(ctx, phare)
+  }
+}
+
+func (r *PhareReconciler) cleanupService(ctx context.Context, phare pharev1beta1.Phare) error {
+  serviceList := &corev1.ServiceList{}
+  if err := r.List(ctx, serviceList, client.InNamespace(phare.Namespace)); err != nil {
+    return err
+  }
+
+  for _, service := range serviceList.Items {
+    for _, ownerRef := range service.OwnerReferences {
+      if ownerRef.UID == phare.UID {
+        if err := r.Delete(ctx, &service); err != nil {
+          r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted Service %s", phare.Name)
+          return err
+        }
+      }
+    }
+  }
+  return nil
+}
+
+func (r *PhareReconciler) reconcileMicroService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+  switch phare.Spec.MicroService.Kind {
   case "Deployment":
-    // Logic for handling Deployment
     return r.reconcileDeployment(ctx, req, phare)
   case "StatefulSet":
-    // Logic for handling StatefulSet
     return r.reconcileStatefulSet(ctx, req, phare)
   default:
-    return ctrl.Result{}, fmt.Errorf("unsupported kind: %s", phare.Spec.Microservice.Kind)
+    return ctrl.Result{}, fmt.Errorf("unsupported kind: %s", phare.Spec.MicroService.Kind)
   }
 }
 
