@@ -127,8 +127,8 @@ func (r *PhareReconciler) desiredStatefulSet(phare *pharev1beta1.Phare) *apps.St
     },
   }
 
-  // Check if the spec.config is not empty
-  if phare.Spec.Config != nil && len(phare.Spec.Config.Data) > 0 {
+  // Check if the Spec.ToolChain.Config is not empty
+  if phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config.Data) > 0 {
     // Add ConfigMap as a volume to the Pod template
     statefulSetVolume := corev1.Volume{
       Name: "config-volume",

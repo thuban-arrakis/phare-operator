@@ -18,8 +18,8 @@ import (
 func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
 
   var configData map[string]string
-  if phare.Spec.Config != nil {
-    configData = phare.Spec.Config.Data
+  if phare.Spec.ToolChain.Config.Data != nil {
+    configData = phare.Spec.ToolChain.Config.Data
   }
 
   // 1. Construct Desired ConfigMap
@@ -50,7 +50,7 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
       return err
     }
   } else {
-    // 3. Check if Phare CR's spec.config has changed
+    // 3. Check if Phare CR's Spec.Toolchain.Config has changed
     if !isDataEqual(existingCM.Data, desiredCM.Data) {
       existingCM.Data = desiredCM.Data
       r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredCM.Name)
@@ -60,7 +60,7 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
     }
 
     // 4. If ConfigMap data itself has been changed, reconcile it
-    // This is handled automatically because the desiredCM is always constructed from Phare CR's spec.config
+    // This is handled automatically because the desiredCM is always constructed from Phare CR's Spec.Toolchain.Config
   }
 
   return nil
