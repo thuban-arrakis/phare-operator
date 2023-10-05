@@ -6,33 +6,39 @@ import (
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   corev1 "k8s.io/api/core/v1"
+  "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
   ctrl "sigs.k8s.io/controller-runtime"
-  "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Also untested, check it later.
 func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
   existingService := &corev1.Service{}
   err := r.Get(ctx, req.NamespacedName, existingService)
-  serviceNotFound := err != nil && client.IgnoreNotFound(err) == nil
 
-  if phare.Spec.Service == nil {
-    if !serviceNotFound {
-      return r.Delete(ctx, existingService)
-    }
+  // If there's no service specified in the CR and the service doesn't exist in the cluster, just return
+  if phare.Spec.Service == nil && errors.IsNotFound(err) {
     return nil
+  }
+
+  // If there's no service specified in the CR but the service exists in the cluster, delete it
+  if phare.Spec.Service == nil {
+    return r.Delete(ctx, existingService)
   }
 
   desiredService := r.desiredService(&phare)
 
-  if serviceNotFound {
+  // If the service doesn't exist in the cluster, create it
+  if errors.IsNotFound(err) {
     return r.createService(ctx, desiredService)
   }
 
+  // If the service exists but there's a difference in spec, update it
   if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) {
-    existingService.Spec = desiredService.Spec
-    return r.updateService(ctx, existingService)
+    desiredService.ResourceVersion = existingService.ResourceVersion // preserve the ResourceVersion
+    return r.updateService(ctx, desiredService)
   }
+
   return nil
 }
 

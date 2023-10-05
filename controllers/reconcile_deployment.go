@@ -38,20 +38,20 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
         // Workaround for `the object has been modified; please apply your changes to the latest version and try again`.
         desiredDeployment.ResourceVersion = existingDeployment.ResourceVersion
         // Temp solution. Need to find a better way to update the deployment. Maybe use client.MergeFrom? Or construct pod template from scratch.
-        existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+        existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas // is this necessary?
         existingDeployment.Spec.Template.Spec.Containers[0].Image = desiredDeployment.Spec.Template.Spec.Containers[0].Image
-        existingDeployment.Spec.Template.Spec.Containers[0].Command = desiredDeployment.Spec.Template.Spec.Containers[0].Command
-        existingDeployment.Spec.Template.Spec.Containers[0].Args = desiredDeployment.Spec.Template.Spec.Containers[0].Args
-        existingDeployment.Spec.Template.Spec.Containers[0].Ports = desiredDeployment.Spec.Template.Spec.Containers[0].Ports
+        existingDeployment.Spec.Template.Spec.Containers[0].Command = desiredDeployment.Spec.Template.Spec.Containers[0].Command // so
+        existingDeployment.Spec.Template.Spec.Containers[0].Args = desiredDeployment.Spec.Template.Spec.Containers[0].Args       // stupid
+        existingDeployment.Spec.Template.Spec.Containers[0].Ports = desiredDeployment.Spec.Template.Spec.Containers[0].Ports     // redo
         existingDeployment.Spec.Template.Spec.Containers[0].Resources = desiredDeployment.Spec.Template.Spec.Containers[0].Resources
         existingDeployment.Spec.Template.Spec.Containers[0].Env = desiredDeployment.Spec.Template.Spec.Containers[0].Env
-        existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes
+        existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes // "Granular update", yea right
         existingDeployment.Spec.Template.Spec.Containers[0].VolumeMounts = desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts
 
         existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
 
         // Update and return any error
-        return r.Update(ctx, existingDeployment)
+        return r.Patch(ctx, existingDeployment, client.MergeFrom(desiredDeployment)) // This is last modified. Todo: check if it works.
       }
       if retryErr := retry.RetryOnConflict(retry.DefaultRetry, updateFunc); retryErr != nil {
         r.Log.Error(retryErr, "Failed to update Deployment after retrying", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
