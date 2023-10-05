@@ -7,6 +7,7 @@ require (
 	github.com/goccy/go-yaml v1.11.2
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.10
+	github.com/pmezard/go-difflib v1.0.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.28.1
 	k8s.io/apimachinery v0.28.1

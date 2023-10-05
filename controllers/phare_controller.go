@@ -67,23 +67,26 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
     return ctrl.Result{}, err
   }
 
-  if err := r.handleConfigMap(ctx, req, phare); err != nil {
+  if err := r.reconcileConfigMap(ctx, phare); err != nil {
     return ctrl.Result{}, err
   }
 
-  if _, err := r.handleService(ctx, req, phare); err != nil {
+  if err := r.reconcileService(ctx, req, phare); err != nil {
     return ctrl.Result{}, err
   }
 
-  if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
+  // if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
+  //   return ctrl.Result{}, err
+  // }
+
+  // if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
+  //   return ctrl.Result{}, err
+  // }
+
+  if err := r.reconcileMicroService(ctx, phare); err != nil {
     return ctrl.Result{}, err
   }
-
-  if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
-    return ctrl.Result{}, err
-  }
-
-  return r.reconcileMicroService(ctx, req, phare)
+  return ctrl.Result{}, nil
 }
 
 func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Request, phare *pharev1beta1.Phare) error {

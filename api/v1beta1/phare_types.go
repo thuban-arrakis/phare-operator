@@ -25,18 +25,21 @@ import (
 // PhareSpec defines the desired state of Phare.
 type PhareSpec struct {
   MicroService MicroServiceSpec `json:"microservice"`
-  Service      *ServiceSpec     `json:"service,omitempty"`
+  Service      *v1.ServiceSpec  `json:"service,omitempty"`
   ToolChain    *ToolChainSpec   `json:"toolchain,omitempty"`
 }
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroServiceSpec struct {
+  // Provides deterministic kind of the microservice.
+  // +kubebuilder:validation:Enum=Deployment;StatefulSet
   Kind                 string                  `json:"kind"`
   ReplicaCount         int32                   `json:"replicaCount,omitempty"`
   Image                ImageSpec               `json:"image"`
-  Port                 int32                   `json:"port,omitempty"`
+  Ports                []v1.ContainerPort      `json:"ports,omitempty"`
   ImagePullPolicy      v1.PullPolicy           `json:"imagePullPolicy,omitempty"`
   Env                  []v1.EnvVar             `json:"env,omitempty"`
+  EnvFrom              []v1.EnvFromSource      `json:"envFrom,omitempty"`
   Affinity             *v1.Affinity            `json:"affinity,omitempty"`
   Tolerations          []v1.Toleration         `json:"tolerations,omitempty"`
   Volumes              []v1.Volume             `json:"volumes,omitempty"`
@@ -47,11 +50,10 @@ type MicroServiceSpec struct {
   ResourceRequirements v1.ResourceRequirements `json:"resourceRequirements,omitempty"`
   Command              []string                `json:"command,omitempty"`
   Args                 []string                `json:"args,omitempty"`
-
-  PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
-  LivenessProbe  *v1.Probe         `json:"livenessProbe,omitempty"`
-  ReadinessProbe *v1.Probe         `json:"readinessProbe,omitempty"`
-  StartupProbe   *v1.Probe         `json:"startupProbe,omitempty"`
+  PodAnnotations       map[string]string       `json:"podAnnotations,omitempty"`
+  LivenessProbe        *v1.Probe               `json:"livenessProbe,omitempty"`
+  ReadinessProbe       *v1.Probe               `json:"readinessProbe,omitempty"`
+  StartupProbe         *v1.Probe               `json:"startupProbe,omitempty"`
 }
 
 // ImageSpec holds information about the microservice's container image.
@@ -107,28 +109,18 @@ type PhareList struct {
   Items           []Phare `json:"items"`
 }
 
-// TODO: Reorganize
-type ServiceSpec struct {
-  Type        v1.ServiceType    `json:"type,omitempty"`
-  Ports       []v1.ServicePort  `json:"ports,omitempty"`
-  Annotations map[string]string `json:"annotations,omitempty"`
-  Labels      map[string]string `json:"labels,omitempty"`
-}
-
 func init() {
   SchemeBuilder.Register(&Phare{}, &PhareList{})
 }
 
 type ToolChainSpec struct {
-  Config            *ConfigSpec            `json:"config,omitempty"` // TODO: I think it should be in toolchan
+  Config            ConfigSpec             `json:"config,omitempty"` // TODO: I think it should be in toolchan
   HTTPRoute         *HTTPRouteSpec         `json:"httpRoute,omitempty"`
   HealthCheckPolicy *HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
   GCPBackendPolicy  *GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
 }
 
-type ConfigSpec struct {
-  Data map[string]string `json:"data,omitempty"`
-}
+type ConfigSpec map[string]string
 
 type HTTPRouteSpec struct {
   Hostnames []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`

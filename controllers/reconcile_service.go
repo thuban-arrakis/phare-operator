@@ -2,68 +2,54 @@ package controllers
 
 import (
   "context"
-  "fmt"
+  "reflect"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
-  "github.com/localcorp/phare-controller/pkg/validator"
-  yamldiff "github.com/localcorp/phare-controller/pkg/yamldiff"
   corev1 "k8s.io/api/core/v1"
-  "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
   existingService := &corev1.Service{}
-  desired := r.desiredService(&phare)
   err := r.Get(ctx, req.NamespacedName, existingService)
+  serviceNotFound := err != nil && client.IgnoreNotFound(err) == nil
 
-  existingServiceSpec := toYAML(existingService) // Rename it later
-  // fmt.Println("a: ", a)
-  desiredServiceSpec := toYAML(desired) // Rename it later
-  // fmt.Println("b: ", b)
-
-  if err != nil {
-    if errors.IsNotFound(err) {
-      // Service doesn't exist, create it
-      if err := r.Create(ctx, desired); err != nil {
-        return ctrl.Result{}, err
-      }
-      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created Service %s", desired.Name)
-      return ctrl.Result{}, nil
-    } else {
-      return ctrl.Result{}, err
+  if phare.Spec.Service == nil {
+    if !serviceNotFound {
+      return r.Delete(ctx, existingService)
     }
-  } else {
-    isValid, desiredMap, modifiedCurrentMap := validator.ValidateYaml(desiredServiceSpec, existingServiceSpec)
-
-    if !isValid {
-      r.Log.Info("Service does not match the desired configuration", "Service.Namespace", desired.Namespace, "Service.Name", desired.Name)
-
-      map1 := validator.PrintMap(modifiedCurrentMap) // Debugging purposes only
-      map2 := validator.PrintMap(desiredMap)         // Debugging purposes only
-
-      diffOutput := yamldiff.Diff(map1, map2) // Debugging purposes only
-      fmt.Println(diffOutput)                 // Debugging purposes only
-
-      patch := client.MergeFrom(existingService.DeepCopy())
-      r.Log.Info("Updating Service", "Service.Namespace", existingService.Namespace, "Service.Name", existingService.Name)
-
-      // Copy desired service's metadata and spec to existingService
-      existingService.ObjectMeta = desired.ObjectMeta
-      existingService.Spec = desired.Spec
-
-      if err := r.Patch(ctx, existingService, patch, client.FieldOwner("phare-controller")); err != nil {
-        return ctrl.Result{}, err
-      }
-      return ctrl.Result{}, nil
-    } else {
-      r.Log.Info("Service matches the desired configuration", "Service.Namespace", desired.Namespace, "Service.Name", desired.Name)
-    }
+    return nil
   }
 
-  return ctrl.Result{}, nil
+  desiredService := r.desiredService(&phare)
+
+  if serviceNotFound {
+    return r.createService(ctx, desiredService)
+  }
+
+  if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) {
+    existingService.Spec = desiredService.Spec
+    return r.updateService(ctx, existingService)
+  }
+  return nil
+}
+
+func (r *PhareReconciler) createService(ctx context.Context, service *corev1.Service) error {
+  if err := r.Create(ctx, service); err != nil {
+    return err
+  }
+  r.Log.Info("Service created successfully", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+  return nil
+}
+
+func (r *PhareReconciler) updateService(ctx context.Context, service *corev1.Service) error {
+  if err := r.Update(ctx, service); err != nil {
+    return err
+  }
+  r.Log.Info("Service updated successfully", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+  return nil
 }
 
 func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Service {
@@ -75,34 +61,29 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
     // "version":                      phare.Spec.Microservice.Image.Tag // Use later for rolling updates
   }
 
-  // Only use the "app" label for the spec level
-  specLabels := map[string]string{
-    "app": phare.Name,
-  }
-
-  serviceType := corev1.ServiceTypeClusterIP
-  if phare.Spec.Service.Type != "" {
-    serviceType = phare.Spec.Service.Type
-  }
-
   service := &corev1.Service{
     ObjectMeta: metav1.ObjectMeta{
       Name:        phare.Name,
       Namespace:   phare.Namespace,
-      Annotations: phare.Spec.Service.Annotations,
-      Labels:      mergeMaps(metadataLabels, phare.Spec.Service.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
+      Annotations: phare.Annotations,
+      Labels:      mergeMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
     },
-    Spec: corev1.ServiceSpec{
-      Selector: specLabels,
-      Type:     serviceType,
-      Ports:    phare.Spec.Service.Ports,
-    },
+    Spec: *phare.Spec.Service,
   }
 
-  // Set owner reference for the service to be the Phare object
-  // Think about moving to `service.ObjectMeta.OwnerReferences`
-  // This will let Kubernetes know that the service is related to the Phare object
-  // and thus will be deleted when the Phare object is deleted
+  // Set the service type to ClusterIP if it's not set.
+  if service.Spec.Type == "" {
+    service.Spec.Type = corev1.ServiceTypeClusterIP
+  }
+
+  // Set the service selector to match the labels in the Phare object
+  // This will let Kubernetes know that the Service is related to the Phare object
+  // and thus will be deleted when the Phare object is deleted.
+  service.Spec.Selector = map[string]string{
+    "app": phare.Name,
+  }
+
+  // Set owner reference for the Service to be the Phare object
   // https://book.kubebuilder.io/reference/using-finalizers.html#finalizer-owners.
   if err := ctrl.SetControllerReference(phare, service, r.Scheme); err != nil {
     r.Log.Error(err, "Failed to set controller reference for Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
@@ -110,6 +91,27 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
   }
 
   return service
+}
+
+// If you want to compare the ServiceSpec fields, you can use this function
+// to check if the existing and desired ServiceSpecs differ.
+// Func returns true if the ServiceSpecs differ, false otherwise.
+func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
+  if !reflect.DeepEqual(existing.Ports, desired.Ports) {
+    return true
+  }
+
+  if !reflect.DeepEqual(existing.Selector, desired.Selector) {
+    return true
+  }
+
+  if !reflect.DeepEqual(existing.Type, desired.Type) {
+    return true
+  }
+
+  // Add comparisons for other fields you care about
+
+  return false
 }
 
 func mergeMaps(map1, map2 map[string]string) map[string]string {

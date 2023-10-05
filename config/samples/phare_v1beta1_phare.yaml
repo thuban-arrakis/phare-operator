@@ -11,23 +11,21 @@ spec:
       repository: nginx
       tag: 1.19.6
     imagePullPolicy: IfNotPresent
-    kind: StatefulSet
+    kind: Deployment # <-- if you want to use Deployment, change to Deployment
     replicaCount: 1
+    command: ["nginx", "-g", "daemon off;"]
+    env:
+      - name: PHARE_CONFIG
+        value: /etc/phare/config.js
+  service:
+    ports:
+      - name: http
+        port: 80
+        targetPort: 80
   toolchain:
-    healthCheckPolicy:
-      default:
-        checkIntervalSec: 15
-        config:
-          httpHealthCheck:
-            port: 80
-            requestPath: /healthz
-          type: HTTP
-        healthyThreshold: 1
-        logConfig:
-          enabled: false
-        timeoutSec: 15
-        unhealthyThreshold: 2
-      targetRef:
-        group: ""
-        kind: Service
-        name: nginx
+    config:
+      key: new-value
+      config.js: |
+        module.exports = {
+          key: 'value'
+        }

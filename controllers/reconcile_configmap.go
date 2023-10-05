@@ -15,58 +15,71 @@ import (
   "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// The main function to reconcile the ConfigMap
+// If the ConfigMap doesn't exist, create it
+// If the ConfigMap exists, update it if necessary
+// If the ConfigMap exists but is not specified in the Phare CR, delete it.
 func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
+  // 1. Check if ToolChain and Config are non-nil.
+  if phare.Spec.ToolChain == nil || phare.Spec.ToolChain.Config == nil {
+    existingConfigMap := &corev1.ConfigMap{}
+    err := r.Get(ctx, client.ObjectKey{Name: phare.Name + "-config", Namespace: phare.Namespace}, existingConfigMap)
 
-  var configData map[string]string
-  if phare.Spec.ToolChain.Config.Data != nil {
-    configData = phare.Spec.ToolChain.Config.Data
-  }
-
-  // 1. Construct Desired ConfigMap
-  desiredCM := &corev1.ConfigMap{
-    ObjectMeta: metav1.ObjectMeta{
-      Name:      phare.Name + "-config",
-      Namespace: phare.Namespace,
-    },
-    Data: configData,
-  }
-
-  // Set Phare CR as the owner of this ConfigMap
-  ctrl.SetControllerReference(&phare, desiredCM, r.Scheme)
-
-  // 2. Check for Existing ConfigMap
-  existingCM := &corev1.ConfigMap{}
-  err := r.Get(ctx, client.ObjectKey{Name: desiredCM.Name, Namespace: desiredCM.Namespace}, existingCM)
-
-  if err != nil {
-    if errors.IsNotFound(err) {
-      // ConfigMap doesn't exist, create it
-      if err = r.Create(ctx, desiredCM); err != nil {
-        return err
+    // If an existing ConfigMap was found, delete it.
+    if err == nil {
+      if deleteErr := r.Delete(ctx, existingConfigMap); deleteErr != nil {
+        return deleteErr
       }
-      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created ConfigMap %s", existingCM.Name)
-    } else {
-      // Another error occurred
+      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted ConfigMap %s", existingConfigMap.Name)
+    }
+    return nil
+  }
+
+  // 2. Generate the desired ConfigMap as ToolChain and Config are non-nil.
+  desiredConfigMap := r.generateConfigMap(phare)
+
+  // 3. Check the existence and state of the current ConfigMap.
+  existingConfigMap := &corev1.ConfigMap{}
+  err := r.Get(ctx, client.ObjectKey{Name: desiredConfigMap.Name, Namespace: phare.Namespace}, existingConfigMap)
+
+  if errors.IsNotFound(err) {
+    // ConfigMap doesn't exist, create it.
+    if err = r.Create(ctx, desiredConfigMap); err != nil {
       return err
     }
-  } else {
-    // 3. Check if Phare CR's Spec.Toolchain.Config has changed
-    if !isDataEqual(existingCM.Data, desiredCM.Data) {
-      existingCM.Data = desiredCM.Data
-      r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredCM.Name)
-      if err = r.Update(ctx, existingCM); err != nil {
-        return err
-      }
+    r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created ConfigMap %s", desiredConfigMap.Name)
+  } else if err == nil && !isDataEqual(existingConfigMap.Data, desiredConfigMap.Data) {
+    // ConfigMap exists and differs from desired, update it.
+    existingConfigMap.Data = desiredConfigMap.Data
+    r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredConfigMap.Name)
+    if updateErr := r.Update(ctx, existingConfigMap); updateErr != nil {
+      return updateErr
     }
-
-    // 4. If ConfigMap data itself has been changed, reconcile it
-    // This is handled automatically because the desiredCM is always constructed from Phare CR's Spec.Toolchain.Config
+  } else if err != nil {
+    // Some other error occurred while fetching the ConfigMap.
+    return err
   }
 
   return nil
 }
 
+// Generates a ConfigMap object based on the Phare CR
+func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.ConfigMap {
+  configMap := &corev1.ConfigMap{
+    ObjectMeta: metav1.ObjectMeta{
+      Name:      phare.Name + "-config",
+      Namespace: phare.Namespace,
+    },
+    Data: phare.Spec.ToolChain.Config,
+  }
+  // Set Phare CR as the owner of this ConfigMap
+  ctrl.SetControllerReference(&phare, configMap, r.Scheme)
+
+  return configMap
+}
+
 // Utility function to compare map data
+// Returns true if the maps are equal, false otherwise
 func isDataEqual(map1, map2 map[string]string) bool {
   if len(map1) != len(map2) {
     return false
