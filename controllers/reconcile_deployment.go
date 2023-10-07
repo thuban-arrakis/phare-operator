@@ -3,13 +3,13 @@ package controllers
 import (
   "context"
   "fmt"
-  "reflect"
 
   appsv1 "k8s.io/api/apps/v1"
   corev1 "k8s.io/api/core/v1"
+  "k8s.io/apimachinery/pkg/api/equality"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-  "k8s.io/client-go/util/retry"
+  "k8s.io/apimachinery/pkg/util/diff"
   "k8s.io/utils/pointer"
   ctrl "sigs.k8s.io/controller-runtime"
   "sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,7 +18,7 @@ import (
 )
 
 func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1beta1.Phare) error {
-  desiredDeployment := r.desiredDeployment(&phare)
+  desiredDeployment := r.newDeployment(&phare)
   existingDeployment := &appsv1.Deployment{}
   err := r.Get(ctx, client.ObjectKey{Name: desiredDeployment.Name, Namespace: phare.Namespace}, existingDeployment)
 
@@ -27,36 +27,23 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
       return createErr
     }
   } else if err == nil {
-    if !deploymentsAreEqual(existingDeployment, desiredDeployment) {
-      updateFunc := func() error {
-        // Fetch the most recent version of the deployment
-        if getErr := r.Get(ctx, client.ObjectKey{Name: desiredDeployment.Name, Namespace: phare.Namespace}, existingDeployment); getErr != nil {
-          return getErr
-        }
+    // Make a deep copy of existingDeployment to store the original state
+    originalDeployment := existingDeployment.DeepCopy()
 
-        // Modify existingDeployment based on desiredDeployment
-        // Workaround for `the object has been modified; please apply your changes to the latest version and try again`.
-        desiredDeployment.ResourceVersion = existingDeployment.ResourceVersion
-        // Temp solution. Need to find a better way to update the deployment. Maybe use client.MergeFrom? Or construct pod template from scratch.
-        existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas // is this necessary?
-        existingDeployment.Spec.Template.Spec.Containers[0].Image = desiredDeployment.Spec.Template.Spec.Containers[0].Image
-        existingDeployment.Spec.Template.Spec.Containers[0].Command = desiredDeployment.Spec.Template.Spec.Containers[0].Command // so
-        existingDeployment.Spec.Template.Spec.Containers[0].Args = desiredDeployment.Spec.Template.Spec.Containers[0].Args       // stupid
-        existingDeployment.Spec.Template.Spec.Containers[0].Ports = desiredDeployment.Spec.Template.Spec.Containers[0].Ports     // redo
-        existingDeployment.Spec.Template.Spec.Containers[0].Resources = desiredDeployment.Spec.Template.Spec.Containers[0].Resources
-        existingDeployment.Spec.Template.Spec.Containers[0].Env = desiredDeployment.Spec.Template.Spec.Containers[0].Env
-        existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes // "Granular update", yea right
-        existingDeployment.Spec.Template.Spec.Containers[0].VolumeMounts = desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts
+    // Modify the existingDeployment in memory
+    r.mergeDeployments(desiredDeployment, existingDeployment)
 
-        existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
-
-        // Update and return any error
-        return r.Patch(ctx, existingDeployment, client.MergeFrom(desiredDeployment)) // This is last modified. Todo: check if it works.
+    // Check if the merged deployment is not equal to the original
+    if !equality.Semantic.DeepEqual(originalDeployment, existingDeployment) {
+      diff := diff.ObjectDiff(originalDeployment, existingDeployment)
+      println("Diff: ", diff)
+      // Calculate the patch using MergeFrom
+      patch := client.MergeFrom(originalDeployment)
+      if patchErr := r.Patch(ctx, existingDeployment, patch); patchErr != nil {
+        println("Error patching Deployment: ", patchErr)
+        return patchErr
       }
-      if retryErr := retry.RetryOnConflict(retry.DefaultRetry, updateFunc); retryErr != nil {
-        r.Log.Error(retryErr, "Failed to update Deployment after retrying", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
-        return retryErr
-      }
+      println("Deployment patched successfully")
     }
   } else {
     // Handle other potential errors
@@ -66,8 +53,26 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
   return nil
 }
 
-func (r *PhareReconciler) desiredDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {
+// This is a mess, but at this point I've not found a better way to do this.
+// Maybe I should just use the k8s client-go library directly?
+// Or wrap Statefulset/Deployment pod template spec in a struct and use that?
+// Anywaways, it works for now.
+func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
+  existingDeployment.Spec.Template.Spec.Containers[0].Image = desiredDeployment.Spec.Template.Spec.Containers[0].Image
+  existingDeployment.Spec.Template.Spec.Containers[0].Command = desiredDeployment.Spec.Template.Spec.Containers[0].Command
+  existingDeployment.Spec.Template.Spec.Containers[0].Args = desiredDeployment.Spec.Template.Spec.Containers[0].Args
+  existingDeployment.Spec.Template.Spec.Containers[0].Env = desiredDeployment.Spec.Template.Spec.Containers[0].Env
+  existingDeployment.Spec.Template.Spec.Containers[0].EnvFrom = desiredDeployment.Spec.Template.Spec.Containers[0].EnvFrom
+  existingDeployment.Spec.Template.Spec.Containers[0].Ports = desiredDeployment.Spec.Template.Spec.Containers[0].Ports
+  existingDeployment.Spec.Template.Spec.Containers[0].Resources = desiredDeployment.Spec.Template.Spec.Containers[0].Resources
+  existingDeployment.Spec.Template.Spec.Containers[0].VolumeMounts = desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts
+  existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
+  existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
+  existingDeployment.Spec.Template.Spec.Tolerations = desiredDeployment.Spec.Template.Spec.Tolerations
+  existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes
+}
 
+func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {
   // Keep the same labels at the metadata level
   metadataLabels := map[string]string{
     "app":                          phare.Name,
@@ -140,7 +145,8 @@ func (r *PhareReconciler) addConfigVolumeToDeployment(deployment *appsv1.Deploym
         LocalObjectReference: corev1.LocalObjectReference{
           Name: phare.Name + "-config",
         },
-        Optional: pointer.Bool(false),
+        DefaultMode: pointer.Int32(420),
+        Optional:    pointer.Bool(false),
       },
     },
   }
@@ -164,83 +170,4 @@ func (r *PhareReconciler) addConfigVolumeToDeployment(deployment *appsv1.Deploym
     MountPath: "/path/to/mount",
   }
   deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append([]corev1.VolumeMount{volumeMount}, deployment.Spec.Template.Spec.Containers[0].VolumeMounts...)
-}
-
-func deploymentsAreEqual(existingDeployment, desiredDeployment *appsv1.Deployment) bool {
-  // Compare replicas
-  if *existingDeployment.Spec.Replicas != *desiredDeployment.Spec.Replicas {
-    return false
-  }
-
-  // Compare container image, environment variables, etc.
-  // Assuming only a single container here for simplicity, you might need to iterate through containers if more than one
-  if existingDeployment.Spec.Template.Spec.Containers[0].Image != desiredDeployment.Spec.Template.Spec.Containers[0].Image {
-    return false
-  }
-
-  // Compare command using DeepEqual here for simplicity
-  if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers[0].Command, desiredDeployment.Spec.Template.Spec.Containers[0].Command) {
-    return false
-  }
-
-  // Compare ports using DeepEqual here for simplicity
-  if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers[0].Ports, desiredDeployment.Spec.Template.Spec.Containers[0].Ports) {
-    return false
-  }
-
-  // Compare resources using DeepEqual here for simplicity
-  if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers[0].Resources, desiredDeployment.Spec.Template.Spec.Containers[0].Resources) {
-    return false
-  }
-
-  // Using DeepEqual here for environment variables as it's a slice of key-value pairs
-  if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers[0].Env, desiredDeployment.Spec.Template.Spec.Containers[0].Env) {
-    return false
-  }
-
-  // Compare volumes using the volumesAreEqual function
-  if !volumesAreEqual(existingDeployment.Spec.Template.Spec.Volumes, desiredDeployment.Spec.Template.Spec.Volumes) {
-    return false
-  }
-
-  // Compare volume mounts
-  // Again assuming only a single container for simplicity
-  if !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers[0].VolumeMounts, desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts) {
-    return false
-  }
-
-  // Add more comparisons as required...
-  return true
-}
-
-// Helper function to check if the ConfigMap volume source is equal
-// in config volume sources of two volumes.
-func volumesAreEqual(volume1, volume2 []corev1.Volume) bool {
-  // Helper function to get ConfigMap volume source for volume named "config-volume"
-  getConfigVolumeSource := func(volumes []corev1.Volume) *corev1.ConfigMapVolumeSource {
-    for _, v := range volumes {
-      if v.Name == "config-volume" {
-        return v.ConfigMap
-      }
-    }
-    return nil
-  }
-
-  configVolumeSource1 := getConfigVolumeSource(volume1)
-  configVolumeSource2 := getConfigVolumeSource(volume2)
-
-  // If both are nil, they are equal
-  if configVolumeSource1 == nil && configVolumeSource2 == nil {
-    return true
-  }
-
-  // If one is nil and the other isn't, they aren't equal
-  if configVolumeSource1 == nil || configVolumeSource2 == nil {
-    return false
-  }
-
-  // Now compare relevant fields of the ConfigMap volume sources, excluding defaultMode
-  return configVolumeSource1.Name == configVolumeSource2.Name &&
-    configVolumeSource1.Optional == configVolumeSource2.Optional
-  // Add more fields if needed, but keep excluding defaultMode
 }
