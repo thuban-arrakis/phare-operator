@@ -9,7 +9,7 @@ spec:
   microservice:
     image:
       repository: nginx
-      tag: 1.19.6
+      tag: latest
     imagePullPolicy: IfNotPresent
     kind: Deployment # <-- if you want to use Deployment, change to Deployment
     replicaCount: 1
@@ -17,6 +17,34 @@ spec:
     env:
       - name: PHARE_CONFIG
         value: /etc/phare/config.js
+      - name: PHARE_CONFIG_KEY
+        valueFrom:
+          configMapKeyRef:
+            name: phare-sample-config
+            key: key
+    volumes:
+      - name: empty
+        emptyDir: {}
+      - name: secret
+        secret:
+          secretName: phare-sample-secret
+      - name: secret-2
+        secret:
+          secretName: phare-sample-secret-2
+    volumeMounts:
+      - name: empty
+        mountPath: /etc/phare
+      - name: secret
+        mountPath: /etc/phare-secret
+      - name: secret-2
+        mountPath: /etc/phare-secret-2
+    initContainers:
+      - name: init
+        image: busybox
+        command: ["sh", "-c", "echo init"]
+        volumeMounts:
+          - name: empty
+            mountPath: /etc/phare
   service:
     ports:
       - name: http
