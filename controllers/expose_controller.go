@@ -2,10 +2,12 @@ package controllers
 
 import (
   "context"
+  "fmt"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
   "github.com/localcorp/phare-controller/pkg/validator"
   yamldiff "github.com/localcorp/phare-controller/pkg/yamldiff"
+  "gopkg.in/yaml.v2"
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -268,4 +270,13 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
   }
 
   return ctrl.Result{}, nil
+}
+
+// Move this to pkg/utils or something.
+func toYAML(obj interface{}) string {
+  data, err := yaml.Marshal(obj)
+  if err != nil {
+    return fmt.Sprintf("Error marshaling to YAML: %s", err)
+  }
+  return string(data)
 }

@@ -17,31 +17,31 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
-	"time"
+  "context"
+  "time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
+  appsv1 "k8s.io/api/apps/v1"
+  corev1 "k8s.io/api/core/v1"
+  "k8s.io/apimachinery/pkg/api/errors"
+  "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/client-go/tools/record"
+  ctrl "sigs.k8s.io/controller-runtime"
+  "sigs.k8s.io/controller-runtime/pkg/client"
+  gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
-	// TODO(user): Event recorder is required to emit Events.
-	// "k8s.io/client-go/tools/record"
+  // TODO(user): Event recorder is required to emit Events.
+  // "k8s.io/client-go/tools/record"
 
-	"github.com/go-logr/logr"
-	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+  "github.com/go-logr/logr"
+  pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
 // PhareReconciler reconciles a Phare object
 type PhareReconciler struct {
-	client.Client
-	Log      logr.Logger
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+  client.Client
+  Log      logr.Logger
+  Scheme   *runtime.Scheme
+  Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=phare.localcorp.internal,resources=phares,verbs=get;list;watch;create;update;patch;delete
@@ -62,54 +62,54 @@ type PhareReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.1/pkg/reconcile
 func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var phare pharev1beta1.Phare
+  var phare pharev1beta1.Phare
 
-	if err := r.fetchPhareResource(ctx, req, &phare); err != nil {
-		return ctrl.Result{}, err
-	}
+  if err := r.fetchPhareResource(ctx, req, &phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
-	if err := r.reconcileConfigMap(ctx, phare); err != nil {
-		return ctrl.Result{}, err
-	}
+  if err := r.reconcileConfigMap(ctx, phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
-	if err := r.reconcileService(ctx, req, phare); err != nil {
-		return ctrl.Result{}, err
-	}
+  if err := r.reconcileService(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
-	// if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
-	//   return ctrl.Result{}, err
-	// }
+  // if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
+  //   return ctrl.Result{}, err
+  // }
 
-	// if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
-	//   return ctrl.Result{}, err
-	// }
+  // if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
+  //   return ctrl.Result{}, err
+  // }
 
-	if err := r.reconcileMicroService(ctx, phare); err != nil {
-		return ctrl.Result{RequeueAfter: time.Minute}, err
-	}
-	return ctrl.Result{}, nil
+  if err := r.reconcileMicroService(ctx, phare); err != nil {
+    return ctrl.Result{RequeueAfter: time.Minute}, err
+  }
+  return ctrl.Result{}, nil
 }
 
 func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Request, phare *pharev1beta1.Phare) error {
-	if err := r.Get(ctx, req.NamespacedName, phare); err != nil {
-		if errors.IsNotFound(err) {
-			// Object not found, return. Created objects are automatically garbage collected.
-			return nil
-		}
-		// Error reading the object.
-		return err
-	}
-	return nil
+  if err := r.Get(ctx, req.NamespacedName, phare); err != nil {
+    if errors.IsNotFound(err) {
+      // Object not found, return. Created objects are automatically garbage collected.
+      return nil
+    }
+    // Error reading the object.
+    return err
+  }
+  return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&pharev1beta1.Phare{}).
-		Owns(&appsv1.Deployment{}).
-		Owns(&appsv1.StatefulSet{}).
-		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
-		Owns(&gatewayv1beta1.HTTPRoute{}).
-		Complete(r)
+  return ctrl.NewControllerManagedBy(mgr).
+    For(&pharev1beta1.Phare{}).
+    Owns(&appsv1.Deployment{}).
+    Owns(&appsv1.StatefulSet{}).
+    Owns(&corev1.Service{}).
+    Owns(&corev1.ConfigMap{}).
+    Owns(&gatewayv1beta1.HTTPRoute{}).
+    Complete(r)
 }

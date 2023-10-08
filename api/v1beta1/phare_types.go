@@ -47,7 +47,7 @@ type MicroServiceSpec struct {
   InitContainers       []v1.Container          `json:"initContainers,omitempty"`
   ExtraContainers      []v1.Container          `json:"extraContainers,omitempty"`
   deleteOptions        metav1.DeleteOptions    `json:"deleteOptions,omitempty"`
-  ResourceRequirements v1.ResourceRequirements `json:"resourceRequirements,omitempty"`
+  ResourceRequirements v1.ResourceRequirements `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
   Command              []string                `json:"command,omitempty"`
   Args                 []string                `json:"args,omitempty"`
   PodAnnotations       map[string]string       `json:"podAnnotations,omitempty"`

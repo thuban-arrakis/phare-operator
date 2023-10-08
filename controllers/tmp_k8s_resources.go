@@ -131,12 +131,16 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 // 	return nil
 // }
 
+// TODO: Should be optimized to use a switch statement.
+// Like, add some deletion logic to the cleanup old resources.
 func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare pharev1beta1.Phare) error {
   switch phare.Spec.MicroService.Kind {
   case "Deployment":
+    r.Log.Info("Reconciling Deployment") // TODO: remove this
     return r.reconcileDeployment(ctx, phare)
-  // case "StatefulSet":
-  // 	return r.reconcileStatefulSet(ctx, req, phare)
+  case "StatefulSet":
+    r.Log.Info("Reconciling StatefulSet") // TODO: remove this
+    return r.reconcileStatefulSet(ctx, phare)
   default:
     return fmt.Errorf("unsupported kind: %s", phare.Spec.MicroService.Kind)
   }

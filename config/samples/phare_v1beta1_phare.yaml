@@ -11,9 +11,16 @@ spec:
       repository: nginx
       tag: latest
     imagePullPolicy: IfNotPresent
-    kind: Deployment # <-- if you want to use Deployment, change to Deployment
+    kind: StatefulSet # <-- if you want to use Deployment, change to Deployment
     replicaCount: 1
     command: ["nginx", "-g", "daemon off;"]
+    resourceRequirements:
+      requests:
+        memory: "128Mi"
+        cpu: "500m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
     env:
       - name: PHARE_CONFIG
         value: /etc/phare/config.js
@@ -45,6 +52,13 @@ spec:
         volumeMounts:
           - name: empty
             mountPath: /etc/phare
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
   service:
     ports:
       - name: http
