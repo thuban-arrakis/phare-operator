@@ -3946,6 +3946,10 @@ spec:
                     additionalProperties:
                       type: string
                     type: object
+                  podLabels:
+                    additionalProperties:
+                      type: string
+                    type: object
                   ports:
                     items:
                       description: ContainerPort represents a network port in a single

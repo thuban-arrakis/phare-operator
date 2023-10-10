@@ -340,6 +340,13 @@ func (in *MicroServiceSpec) DeepCopyInto(out *MicroServiceSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.PodLabels != nil {
+		in, out := &in.PodLabels, &out.PodLabels
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.PodAnnotations != nil {
 		in, out := &in.PodAnnotations, &out.PodAnnotations
 		*out = make(map[string]string, len(*in))

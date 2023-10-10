@@ -77,12 +77,24 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
     // "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
   }
 
-  // Only use the "app" label for the spec level
-  specLabels := map[string]string{
+  // Default pod labels and annotations
+  podLabels := map[string]string{
     "app": phare.Name,
+  }
+  for key, value := range phare.Spec.MicroService.PodLabels {
+    podLabels[key] = value
+  }
+
+  podAnnotations := map[string]string{}
+  for key, value := range phare.Spec.MicroService.PodAnnotations {
+    podAnnotations[key] = value
   }
 
   statefulSet := &appsv1.StatefulSet{
+    TypeMeta: metav1.TypeMeta{
+      APIVersion: "apps/v1",
+      Kind:       "StatefulSet",
+    },
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name,
       Namespace: phare.Namespace,
@@ -90,12 +102,13 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
     },
     Spec: appsv1.StatefulSetSpec{
       Selector: &metav1.LabelSelector{
-        MatchLabels: specLabels,
+        MatchLabels: podLabels,
       },
       Replicas: &phare.Spec.MicroService.ReplicaCount,
       Template: corev1.PodTemplateSpec{
         ObjectMeta: metav1.ObjectMeta{
-          Labels: specLabels,
+          Labels:      podLabels,
+          Annotations: podAnnotations,
         },
         Spec: corev1.PodSpec{
           Containers: []corev1.Container{
