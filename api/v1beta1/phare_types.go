@@ -1,17 +1,17 @@
 /*
-  Copyright 2023.
+Copyright 2023.
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-      http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 
 package v1beta1
@@ -25,55 +25,42 @@ import (
 // PhareSpec defines the desired state of Phare.
 type PhareSpec struct {
   MicroService MicroServiceSpec `json:"microservice"`
-  Service      *ServiceSpec     `json:"service,omitempty"`
-  Config       *ConfigSpec      `json:"config,omitempty"` // TODO: I think it should be in toolchan
+  Service      *v1.ServiceSpec  `json:"service,omitempty"`
   ToolChain    *ToolChainSpec   `json:"toolchain,omitempty"`
-}
-
-type ConfigSpec struct {
-  Data map[string]string `json:"data,omitempty"`
 }
 
 // MicroserviceSpec contains the specifications related to the microservice.
 type MicroServiceSpec struct {
-  Kind            string               `json:"kind"`
-  ReplicaCount    int32                `json:"replicaCount,omitempty"`
-  Image           ImageSpec            `json:"image"`
-  ImagePullPolicy v1.PullPolicy        `json:"imagePullPolicy,omitempty"`
-  Env             []v1.EnvVar          `json:"env,omitempty"`
-  Affinity        *v1.Affinity         `json:"affinity,omitempty"`
-  Tolerations     []v1.Toleration      `json:"tolerations,omitempty"`
-  Volumes         []v1.Volume          `json:"volumes,omitempty"`
-  Sidecars        []Sidecar            `json:"sidecars,omitempty"`
-  InitContainers  []v1.Container       `json:"initContainers,omitempty"`
-  deleteOptions   metav1.DeleteOptions `json:"deleteOptions,omitempty"`
-}
-
-// Sidecar defines a container to be run in the same pod.
-type Sidecar struct {
-  *Resources  `json:"resources,omitempty"`
-  Name        string             `json:"name,omitempty"`
-  DockerImage string             `json:"image,omitempty"`
-  Ports       []v1.ContainerPort `json:"ports,omitempty"`
-  Env         []v1.EnvVar        `json:"env,omitempty"`
+  // Provides deterministic kind of the microservice.
+  // +kubebuilder:validation:Enum=Deployment;StatefulSet
+  Kind                 string                     `json:"kind"`
+  ReplicaCount         int32                      `json:"replicaCount,omitempty"`
+  Image                ImageSpec                  `json:"image"`
+  Ports                []v1.ContainerPort         `json:"ports,omitempty"`
+  ImagePullPolicy      v1.PullPolicy              `json:"imagePullPolicy,omitempty"`
+  Env                  []v1.EnvVar                `json:"env,omitempty"`
+  EnvFrom              []v1.EnvFromSource         `json:"envFrom,omitempty"`
+  Affinity             *v1.Affinity               `json:"affinity,omitempty"`
+  Tolerations          []v1.Toleration            `json:"tolerations,omitempty"`
+  Volumes              []v1.Volume                `json:"volumes,omitempty"`
+  VolumeMounts         []v1.VolumeMount           `json:"volumeMounts,omitempty"`
+  VolumeClaimTemplates []v1.PersistentVolumeClaim `json:"volumeClaimTemplates,omitempty"`
+  InitContainers       []v1.Container             `json:"initContainers,omitempty"`
+  ExtraContainers      []v1.Container             `json:"extraContainers,omitempty"`
+  deleteOptions        metav1.DeleteOptions       `json:"deleteOptions,omitempty"`
+  ResourceRequirements v1.ResourceRequirements    `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
+  Command              []string                   `json:"command,omitempty"`
+  Args                 []string                   `json:"args,omitempty"`
+  PodAnnotations       map[string]string          `json:"podAnnotations,omitempty"`
+  LivenessProbe        *v1.Probe                  `json:"livenessProbe,omitempty"`
+  ReadinessProbe       *v1.Probe                  `json:"readinessProbe,omitempty"`
+  StartupProbe         *v1.Probe                  `json:"startupProbe,omitempty"`
 }
 
 // ImageSpec holds information about the microservice's container image.
 type ImageSpec struct {
   Repository string `json:"repository"`
   Tag        string `json:"tag"`
-}
-
-// ResourceDescription describes CPU and memory resources defined for a cluster.
-type ResourceDescription struct {
-  CPU    string `json:"cpu"`
-  Memory string `json:"memory"`
-}
-
-// Resources describes requests and limits for the cluster resouces.
-type Resources struct {
-  ResourceRequests ResourceDescription `json:"requests,omitempty"`
-  ResourceLimits   ResourceDescription `json:"limits,omitempty"`
 }
 
 // PharePhase represents the phases of Phare processing.
@@ -123,26 +110,19 @@ type PhareList struct {
   Items           []Phare `json:"items"`
 }
 
-// TODO: Reorganize
-type ServiceSpec struct {
-  Type v1.ServiceType `json:"type,omitempty"`
-
-  Ports []v1.ServicePort `json:"ports,omitempty"`
-
-  Annotations map[string]string `json:"annotations,omitempty"`
-
-  Labels map[string]string `json:"labels,omitempty"`
-}
-
 func init() {
   SchemeBuilder.Register(&Phare{}, &PhareList{})
 }
 
 type ToolChainSpec struct {
+  Config            ConfigSpec             `json:"config,omitempty"` // TODO: I think it should be in toolchan
   HTTPRoute         *HTTPRouteSpec         `json:"httpRoute,omitempty"`
   HealthCheckPolicy *HealthCheckPolicySpec `json:"healthCheckPolicy,omitempty"`
   GCPBackendPolicy  *GCPBackendPolicySpec  `json:"gcpBackendPolicy,omitempty"`
 }
+
+type ConfigSpec map[string]string
+
 type HTTPRouteSpec struct {
   Hostnames []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`
   ParentRef []gatewayv1beta1.ParentReference `json:"parentRefs,omitempty"` // Ensure this is named correctly

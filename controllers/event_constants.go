@@ -2,6 +2,6 @@ package controllers
 
 // Phare related constants
 const (
-	PharePhaseReconciling = "Reconciling"
-	PharePhaseActive      = "Active"
+  PharePhaseReconciling = "Reconciling"
+  PharePhaseActive      = "Active"
 )
