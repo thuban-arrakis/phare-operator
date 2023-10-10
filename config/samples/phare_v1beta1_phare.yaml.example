@@ -9,114 +9,124 @@ spec:
   microservice:
     image:
       repository: nginx
-      tag: 1.19.6
+      tag: latest
     imagePullPolicy: IfNotPresent
-    kind: StatefulSet
+    kind: StatefulSet # <-- if you want to use Deployment, change to Deployment
     replicaCount: 1
-  # toolchain:
-  #   httpRoute:
-  #     hostnames:
-  #     - myapp.localcorp.internal
-  #     parentRefs:
-  #     - group: gateway.networking.k8s.io
-  #       kind: Gateway
-  #       name: external-http-gateway
-  #       namespace: gateway-system
-  #     rules:
-  #     - backendRefs:
-  #       - group: ""
-  #         kind: Service
-  #         name: myapp
-  #         port: 8080
-  #         weight: 1
-  #       filters: []
-  #       matches:
-  #       - path:
-  #           type: PathPrefix
-  #           value: /
-    # gcpBackendPolicy:
-    # healthCheckPolicy:
-  #   env:
-  #     - name: PHARE_CONFIG
-  #       value: /etc/phare/config.js
-  #     - name: PHARE_CONFIG_PATH
-  #       valueFrom:
-  #         configMapKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #     - name: PHARE_CONFIG_KEY
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #   affinity:
-  #     podAntiAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         - labelSelector:
-  #             matchExpressions:
-  #               - key: app.kubernetes.io/name
-  #                 operator: In
-  #                 values:
-  #                   - phare
-  #           topologyKey: kubernetes.io/hostname
-  #     nodeAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         nodeSelectorTerms:
-  #           - matchExpressions:
-  #               - key: node-role.kubernetes.io/master
-  #                 operator: DoesNotExist
-  #   tolerations:
-  #     - key: node-role.kubernetes.io/master
-  #       operator: Exists
-  #       effect: NoSchedule
-  #  initContainers:
-  #   image:
-  #     repository: busybox
-  #     tag: 1.32.1
-  #   imagePullPolicy: IfNotPresent
-  #   command: ["/bin/sh"]
-  #   args: ["-c", "echo 'init container'"]
-  #   env:
-  #     - name: PHARE_CONFIG
-  #       value: /etc/phare/config.js
-  #     - name: PHARE_CONFIG_PATH
-  #       valueFrom:
-  #         configMapKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #     - name: PHARE_CONFIG_KEY
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: phare-sample
-  #           key: config.js
-  #   affinity:
-  #     podAntiAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         - labelSelector:
-  #             matchExpressions:
-  #               - key: app.kubernetes.io/name
-  #                 operator: In
-  #                 values:
-  #                   - phare
-  #           topologyKey: kubernetes.io/hostname
-  #     nodeAffinity:
-  #       requiredDuringSchedulingIgnoredDuringExecution:
-  #         nodeSelectorTerms:
-  #           - matchExpressions:
-  #               - key: node-role.kubernetes.io/master
-  #                 operator: DoesNotExist
-  #   tolerations:
-  #     - key: node-role.kubernetes.io/master
-  #       operator: Exists
-  #       effect: NoSchedule
+    command: ["nginx", "-g", "daemon off;"]
+    # volumeClaimTemplates:
+    # - apiVersion: v1
+    #   kind: PersistentVolumeClaim
+    #   metadata: {}
+    #   spec:
+    #     accessModes: [ "ReadWriteOnce" ]
+    #     resources:
+    #       requests:
+    #         storage: 1Gi
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+            matchExpressions:
+            - key: dedicated_to
+              operator: In
+              values:
+              - <NODE_POOL>
+          weight: 100
+    tolerations:
+    - effect: NoSchedule
+      key: dedicated_to
+      operator: Equal
+      value: <NODE_POOL>
+    # extraContainers:
+    #   - name: extra
+    #     image: busybox
+    #     # command: ["sh", "-c", "echo extra"]
+    #     command: ["sh", "-c", "echo extra && nslookup phare-sample && nslookup phare-sample.default && nslookup phare-sample.default.svc.clus && sleep 3600"]
+    #     resources:
+    #       requests:
+    #         memory: "64Mi"
+    #         cpu: "250m"
+    #       limits:
+    #         memory: "128Mi"
+    #         cpu: "500m"
+    resourceRequirements:
+      requests:
+        memory: "128Mi"
+        cpu: "500m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"
+    env:
+      - name: PHARE_CONFIG
+        value: /etc/phare/config.js
+      - name: PHARE_CONFIG_KEY
+        valueFrom:
+          configMapKeyRef:
+            name: phare-sample-config
+            key: key
+    volumes:
+      - name: empty
+        emptyDir: {}
+      - name: secret
+        secret:
+          secretName: phare-sample-secret
+      - name: secret-2
+        secret:
+          secretName: phare-sample-secret-2
+    volumeMounts:
+      - name: empty
+        mountPath: /etc/phare
+      - name: secret
+        mountPath: /etc/phare-secret
+      - name: secret-2
+        mountPath: /etc/phare-secret-2
+    initContainers:
+      - name: init
+        image: busybox
+        command: ["sh", "-c", "echo init"]
+        volumeMounts:
+          - name: empty
+            mountPath: /etc/phare
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
   service:
     ports:
       - name: http
         port: 80
         targetPort: 80
-  config:
-    key: value
-    config.js: |
-      module.exports = {
-        key: 'value'
-      }
+  toolchain:
+    config:
+      key: '{{ .Name }}'
+      config.js: |
+        module.exports = {
+          key: 'value'
+        }
+      template.js: |
+        module.exports = {
+          project: {
+            name: '{{ .Name }}',
+            namespace: '{{ .Namespace }}',
+            labels: {
+              app: '{{ .Name }}',
+              app_kubernetes_io_name: '{{ .Name }}',
+              app_kubernetes_io_created_by: 'operator'
+            }
+          },

@@ -33,27 +33,28 @@ type PhareSpec struct {
 type MicroServiceSpec struct {
   // Provides deterministic kind of the microservice.
   // +kubebuilder:validation:Enum=Deployment;StatefulSet
-  Kind                 string                  `json:"kind"`
-  ReplicaCount         int32                   `json:"replicaCount,omitempty"`
-  Image                ImageSpec               `json:"image"`
-  Ports                []v1.ContainerPort      `json:"ports,omitempty"`
-  ImagePullPolicy      v1.PullPolicy           `json:"imagePullPolicy,omitempty"`
-  Env                  []v1.EnvVar             `json:"env,omitempty"`
-  EnvFrom              []v1.EnvFromSource      `json:"envFrom,omitempty"`
-  Affinity             *v1.Affinity            `json:"affinity,omitempty"`
-  Tolerations          []v1.Toleration         `json:"tolerations,omitempty"`
-  Volumes              []v1.Volume             `json:"volumes,omitempty"`
-  VolumeMounts         []v1.VolumeMount        `json:"volumeMounts,omitempty"`
-  InitContainers       []v1.Container          `json:"initContainers,omitempty"`
-  ExtraContainers      []v1.Container          `json:"extraContainers,omitempty"`
-  deleteOptions        metav1.DeleteOptions    `json:"deleteOptions,omitempty"`
-  ResourceRequirements v1.ResourceRequirements `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
-  Command              []string                `json:"command,omitempty"`
-  Args                 []string                `json:"args,omitempty"`
-  PodAnnotations       map[string]string       `json:"podAnnotations,omitempty"`
-  LivenessProbe        *v1.Probe               `json:"livenessProbe,omitempty"`
-  ReadinessProbe       *v1.Probe               `json:"readinessProbe,omitempty"`
-  StartupProbe         *v1.Probe               `json:"startupProbe,omitempty"`
+  Kind                 string                     `json:"kind"`
+  ReplicaCount         int32                      `json:"replicaCount,omitempty"`
+  Image                ImageSpec                  `json:"image"`
+  Ports                []v1.ContainerPort         `json:"ports,omitempty"`
+  ImagePullPolicy      v1.PullPolicy              `json:"imagePullPolicy,omitempty"`
+  Env                  []v1.EnvVar                `json:"env,omitempty"`
+  EnvFrom              []v1.EnvFromSource         `json:"envFrom,omitempty"`
+  Affinity             *v1.Affinity               `json:"affinity,omitempty"`
+  Tolerations          []v1.Toleration            `json:"tolerations,omitempty"`
+  Volumes              []v1.Volume                `json:"volumes,omitempty"`
+  VolumeMounts         []v1.VolumeMount           `json:"volumeMounts,omitempty"`
+  VolumeClaimTemplates []v1.PersistentVolumeClaim `json:"volumeClaimTemplates,omitempty"`
+  InitContainers       []v1.Container             `json:"initContainers,omitempty"`
+  ExtraContainers      []v1.Container             `json:"extraContainers,omitempty"`
+  deleteOptions        metav1.DeleteOptions       `json:"deleteOptions,omitempty"`
+  ResourceRequirements v1.ResourceRequirements    `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
+  Command              []string                   `json:"command,omitempty"`
+  Args                 []string                   `json:"args,omitempty"`
+  PodAnnotations       map[string]string          `json:"podAnnotations,omitempty"`
+  LivenessProbe        *v1.Probe                  `json:"livenessProbe,omitempty"`
+  ReadinessProbe       *v1.Probe                  `json:"readinessProbe,omitempty"`
+  StartupProbe         *v1.Probe                  `json:"startupProbe,omitempty"`
 }
 
 // ImageSpec holds information about the microservice's container image.

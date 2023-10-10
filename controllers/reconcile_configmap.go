@@ -7,6 +7,8 @@ import (
   "sort"
 
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+  tpl "github.com/localcorp/phare-controller/pkg/go-templates"
+
   corev1 "k8s.io/api/core/v1"
   "k8s.io/apimachinery/pkg/api/errors"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,6 +67,7 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 
 // Generates a ConfigMap object based on the Phare CR
 func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.ConfigMap {
+
   configMap := &corev1.ConfigMap{
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name + "-config",
@@ -72,6 +75,16 @@ func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.Co
     },
     Data: phare.Spec.ToolChain.Config,
   }
+
+  // Go-templates support
+  for key, tmplValue := range phare.Spec.ToolChain.Config {
+    processedValue, err := tpl.ProcessTemplate(tmplValue, phare.ObjectMeta)
+    if err != nil {
+      fmt.Println("Error processing template: ", err)
+    }
+    configMap.Data[key] = processedValue
+  }
+
   // Set Phare CR as the owner of this ConfigMap
   ctrl.SetControllerReference(&phare, configMap, r.Scheme)
 
@@ -91,6 +104,9 @@ func isDataEqual(map1, map2 map[string]string) bool {
   }
   return true
 }
+
+// Utility function to hash the data of a ConfigMap
+// CAUTION!: This function will return an error if the ConfigMap doesn't exist.
 
 func (r *PhareReconciler) hashConfigMapData(configMapName string, namespace string) (string, error) {
   cm := &corev1.ConfigMap{}

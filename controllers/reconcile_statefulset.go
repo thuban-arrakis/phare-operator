@@ -15,6 +15,7 @@ import (
   "github.com/google/go-cmp/cmp"
   "github.com/google/go-cmp/cmp/cmpopts"
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+  tpl "github.com/localcorp/phare-controller/pkg/go-templates"
 )
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev1beta1.Phare) error {
@@ -30,8 +31,12 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
     originalStatefulSet := existingStatefulSet.DeepCopy()
     r.mergeStatefulSets(desiredStatefulSet, existingStatefulSet)
 
-    // define the ignored fields for containers
-    var IgnoreContainerFields = cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy")
+    // Define the ignored fields for containers, probes, etc.
+    var IgnoreContainerFields = cmp.Options{
+      cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
+      cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
+      cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
+    }
 
     diff := cmp.Diff(originalStatefulSet, existingStatefulSet, IgnoreContainerFields)
     println("Diff: ", diff) // TODO: remove this, it's just for debugging
@@ -54,18 +59,12 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 
 func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStatefulSet *appsv1.StatefulSet) {
 
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Image = desiredStatefulSet.Spec.Template.Spec.Containers[0].Image
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Command = desiredStatefulSet.Spec.Template.Spec.Containers[0].Command
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Args = desiredStatefulSet.Spec.Template.Spec.Containers[0].Args
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Env = desiredStatefulSet.Spec.Template.Spec.Containers[0].Env
-  existingStatefulSet.Spec.Template.Spec.Containers[0].EnvFrom = desiredStatefulSet.Spec.Template.Spec.Containers[0].EnvFrom
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Ports = desiredStatefulSet.Spec.Template.Spec.Containers[0].Ports
-  existingStatefulSet.Spec.Template.Spec.Containers[0].Resources = desiredStatefulSet.Spec.Template.Spec.Containers[0].Resources
-  existingStatefulSet.Spec.Template.Spec.Containers[0].VolumeMounts = desiredStatefulSet.Spec.Template.Spec.Containers[0].VolumeMounts
+  existingStatefulSet.Spec.Template.Spec.Containers = desiredStatefulSet.Spec.Template.Spec.Containers
   existingStatefulSet.Spec.Template.Spec.InitContainers = desiredStatefulSet.Spec.Template.Spec.InitContainers
   existingStatefulSet.Spec.Template.Spec.Affinity = desiredStatefulSet.Spec.Template.Spec.Affinity
   existingStatefulSet.Spec.Template.Spec.Tolerations = desiredStatefulSet.Spec.Template.Spec.Tolerations
   existingStatefulSet.Spec.Template.Spec.Volumes = desiredStatefulSet.Spec.Template.Spec.Volumes
+  existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
 
 }
 
@@ -101,15 +100,17 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
         Spec: corev1.PodSpec{
           Containers: []corev1.Container{
             {
-              Name:         phare.Name,
-              Image:        phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
-              VolumeMounts: phare.Spec.MicroService.VolumeMounts,
-              Command:      phare.Spec.MicroService.Command,
-              Args:         phare.Spec.MicroService.Args,
-              Env:          phare.Spec.MicroService.Env,
-              EnvFrom:      phare.Spec.MicroService.EnvFrom,
-              Ports:        phare.Spec.MicroService.Ports,
-              Resources:    phare.Spec.MicroService.ResourceRequirements,
+              Name:           phare.Name,
+              Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
+              VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
+              Command:        phare.Spec.MicroService.Command,
+              Args:           phare.Spec.MicroService.Args,
+              Env:            phare.Spec.MicroService.Env,
+              EnvFrom:        phare.Spec.MicroService.EnvFrom,
+              Ports:          phare.Spec.MicroService.Ports,
+              Resources:      phare.Spec.MicroService.ResourceRequirements,
+              LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
+              ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
             },
           },
           InitContainers: phare.Spec.MicroService.InitContainers,
@@ -118,6 +119,7 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
           Volumes:        phare.Spec.MicroService.Volumes,
         },
       },
+      VolumeClaimTemplates: phare.Spec.MicroService.VolumeClaimTemplates,
     },
   }
 
@@ -128,6 +130,10 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
     return nil
   }
 
+  if phare.Spec.MicroService.ExtraContainers != nil && len(phare.Spec.MicroService.ExtraContainers) > 0 {
+    statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, phare.Spec.MicroService.ExtraContainers...)
+  }
+
   // Check if the Spec.Toolchain.Config is not empty and add the ConfigMap volume
   if phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config) > 0 {
     r.addConfigVolumeToStatefulset(statefulSet, phare)
@@ -136,6 +142,13 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
   // Preserve the default mode of the volumes.
   for i := range statefulSet.Spec.Template.Spec.Volumes {
     UpdateVolume(&statefulSet.Spec.Template.Spec.Volumes[i], 420) // or any default mode you want
+  }
+
+  // Go-templates support
+  if err := tpl.ProcessLivenessProbeTemplate(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe, phare.ObjectMeta); err != nil {
+    // Log or handle the error
+    r.Log.Error(err, "Error processing liveness probe template")
+    return nil
   }
 
   return statefulSet
@@ -156,7 +169,7 @@ func (r *PhareReconciler) addConfigVolumeToStatefulset(statefulSet *appsv1.State
   }
   configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
   if err != nil {
-    r.Log.Info(fmt.Sprintf("Error hashing ConfigMap data: %s", err))
+    r.Log.Info(fmt.Sprintf("Error hashing ConfigMap data: %s", err)) // Stop using fmt.Println.
     // Handle error, maybe return an error or log it
   }
 

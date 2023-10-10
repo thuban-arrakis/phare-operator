@@ -33,8 +33,11 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
     // Modify the existingDeployment in memory
     r.mergeDeployments(desiredDeployment, existingDeployment)
 
-    // define the ignored fields for containers
-    var IgnoreContainerFields = cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy")
+    var IgnoreContainerFields = cmp.Options{
+      cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
+      cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
+      cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
+    }
 
     // Use cmp.Diff to determine differences
     diff := cmp.Diff(originalDeployment, existingDeployment, IgnoreContainerFields)
@@ -64,14 +67,7 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // Anywaways, it works for now.
 // NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
-  existingDeployment.Spec.Template.Spec.Containers[0].Image = desiredDeployment.Spec.Template.Spec.Containers[0].Image
-  existingDeployment.Spec.Template.Spec.Containers[0].Command = desiredDeployment.Spec.Template.Spec.Containers[0].Command
-  existingDeployment.Spec.Template.Spec.Containers[0].Args = desiredDeployment.Spec.Template.Spec.Containers[0].Args
-  existingDeployment.Spec.Template.Spec.Containers[0].Env = desiredDeployment.Spec.Template.Spec.Containers[0].Env
-  existingDeployment.Spec.Template.Spec.Containers[0].EnvFrom = desiredDeployment.Spec.Template.Spec.Containers[0].EnvFrom
-  existingDeployment.Spec.Template.Spec.Containers[0].Ports = desiredDeployment.Spec.Template.Spec.Containers[0].Ports
-  existingDeployment.Spec.Template.Spec.Containers[0].Resources = desiredDeployment.Spec.Template.Spec.Containers[0].Resources
-  existingDeployment.Spec.Template.Spec.Containers[0].VolumeMounts = desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts
+  existingDeployment.Spec.Template.Spec.Containers = desiredDeployment.Spec.Template.Spec.Containers
   existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
   existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
   existingDeployment.Spec.Template.Spec.Tolerations = desiredDeployment.Spec.Template.Spec.Tolerations
@@ -164,7 +160,7 @@ func (r *PhareReconciler) addConfigVolumeToDeployment(deployment *appsv1.Deploym
   }
   configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
   if err != nil {
-    r.Log.Info(fmt.Sprintf("Error hashing ConfigMap data: %s", err))
+    r.Log.Info(fmt.Sprintf("Error hashing ConfigMap data: %s", err)) // Stop using fmt.Println
     // Handle error, maybe return an error or log it
   }
 
