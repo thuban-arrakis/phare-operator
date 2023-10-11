@@ -18,7 +18,7 @@ package controllers
 
 import (
   "context"
-  "time"
+  "fmt"
 
   appsv1 "k8s.io/api/apps/v1"
   corev1 "k8s.io/api/core/v1"
@@ -26,13 +26,17 @@ import (
   "k8s.io/apimachinery/pkg/runtime"
   "k8s.io/client-go/tools/record"
   ctrl "sigs.k8s.io/controller-runtime"
+  "sigs.k8s.io/controller-runtime/pkg/builder"
   "sigs.k8s.io/controller-runtime/pkg/client"
+  "sigs.k8s.io/controller-runtime/pkg/event"
+  "sigs.k8s.io/controller-runtime/pkg/predicate"
   gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 
   // TODO(user): Event recorder is required to emit Events.
   // "k8s.io/client-go/tools/record"
 
   "github.com/go-logr/logr"
+  "github.com/google/go-cmp/cmp"
   pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
@@ -65,7 +69,7 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
   var phare pharev1beta1.Phare
 
   if err := r.fetchPhareResource(ctx, req, &phare); err != nil {
-    return ctrl.Result{}, err
+    return ctrl.Result{}, err // TODO: Main resource can be fetched often. `RequeueAfter: 5 * time.Minute`?
   }
 
   if err := r.reconcileConfigMap(ctx, phare); err != nil {
@@ -76,16 +80,23 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
     return ctrl.Result{}, err
   }
 
-  // if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
-  //   return ctrl.Result{}, err
-  // }
+  if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
-  // if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
-  //   return ctrl.Result{}, err
-  // }
+  if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
+    return ctrl.Result{}, err
+  }
 
   if err := r.reconcileMicroService(ctx, phare); err != nil {
-    return ctrl.Result{RequeueAfter: time.Minute}, err
+    return ctrl.Result{}, err
+  }
+
+  // Update status after successful reconciliation
+  phare.Status.Phase = PharePhaseActive
+  phare.Status.Message = "Successfully reconciled Phare resource"
+  if err := r.Status().Update(ctx, &phare); err != nil {
+    return ctrl.Result{}, err
   }
   return ctrl.Result{}, nil
 }
@@ -102,14 +113,48 @@ func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Reque
   return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
+  labelFilter := defaultLabelPredicate("app.kubernetes.io/created-by", "phare-controller")
+
+  statefulSetPredicate := predicate.Funcs{
+    UpdateFunc: func(e event.UpdateEvent) bool {
+      oldStatefulSet, ok1 := e.ObjectOld.(*appsv1.StatefulSet) // Cast the old object to a StatefulSet
+
+      newStatefulSet, ok2 := e.ObjectNew.(*appsv1.StatefulSet) // Cast the new object to a StatefulSet. And thats cool, because we can compare them now. :)
+      diff := cmp.Diff(oldStatefulSet, newStatefulSet)         // Compare the two objects
+      fmt.Println("Diff: ", diff)
+      if ok1 && ok2 {
+        return oldStatefulSet.GetGeneration() != newStatefulSet.GetGeneration()
+      }
+      // Default to reconcile if we can't cast the objects correctly
+      return true
+    },
+  }
+
   return ctrl.NewControllerManagedBy(mgr).
     For(&pharev1beta1.Phare{}).
-    Owns(&appsv1.Deployment{}).
-    Owns(&appsv1.StatefulSet{}).
-    Owns(&corev1.Service{}).
-    Owns(&corev1.ConfigMap{}).
-    Owns(&gatewayv1beta1.HTTPRoute{}).
+    Owns(&appsv1.Deployment{}, builder.WithPredicates(labelFilter)).
+    Owns(&appsv1.StatefulSet{}, builder.WithPredicates(labelFilter, statefulSetPredicate)). // Apply the predicate here
+    Owns(&corev1.Service{}, builder.WithPredicates(labelFilter)).
+    Owns(&corev1.ConfigMap{}, builder.WithPredicates(labelFilter)).
+    Owns(&gatewayv1beta1.HTTPRoute{}, builder.WithPredicates(labelFilter)).
     Complete(r)
+}
+
+// Create a helper function that generates a default predicate for a given label
+func defaultLabelPredicate(labelKey, labelValue string) predicate.Predicate {
+  return predicate.Funcs{
+    CreateFunc: func(e event.CreateEvent) bool {
+      return e.Object.GetLabels()[labelKey] == labelValue
+    },
+    UpdateFunc: func(e event.UpdateEvent) bool {
+      return e.ObjectNew.GetLabels()[labelKey] == labelValue
+    },
+    DeleteFunc: func(e event.DeleteEvent) bool {
+      return e.Object.GetLabels()[labelKey] == labelValue
+    },
+    GenericFunc: func(e event.GenericEvent) bool {
+      return e.Object.GetLabels()[labelKey] == labelValue
+    },
+  }
 }

@@ -68,6 +68,10 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
   }
 
   service := &corev1.Service{
+    TypeMeta: metav1.TypeMeta{
+      APIVersion: "v1",
+      Kind:       "Service",
+    },
     ObjectMeta: metav1.ObjectMeta{
       Name:        phare.Name,
       Namespace:   phare.Namespace,

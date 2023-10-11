@@ -136,10 +136,10 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare pharev1beta1.Phare) error {
   switch phare.Spec.MicroService.Kind {
   case "Deployment":
-    r.Log.Info("Reconciling Deployment") // TODO: remove this
+    r.Log.Info("Reconciling Deployment", "Deployment.Namespace", phare.Namespace, "Deployment.Name", phare.Name) // TODO: remove this
     return r.reconcileDeployment(ctx, phare)
   case "StatefulSet":
-    r.Log.Info("Reconciling StatefulSet") // TODO: remove this
+    r.Log.Info("Reconciling StatefulSet", "Statefulset.Namespace", phare.Namespace, "Statefulset.Name", phare.Name) // TODO: remove this
     return r.reconcileStatefulSet(ctx, phare)
   default:
     return fmt.Errorf("unsupported kind: %s", phare.Spec.MicroService.Kind)

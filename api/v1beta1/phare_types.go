@@ -51,6 +51,7 @@ type MicroServiceSpec struct {
   ResourceRequirements v1.ResourceRequirements    `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
   Command              []string                   `json:"command,omitempty"`
   Args                 []string                   `json:"args,omitempty"`
+  PodLabels            map[string]string          `json:"podLabels,omitempty"`
   PodAnnotations       map[string]string          `json:"podAnnotations,omitempty"`
   LivenessProbe        *v1.Probe                  `json:"livenessProbe,omitempty"`
   ReadinessProbe       *v1.Probe                  `json:"readinessProbe,omitempty"`

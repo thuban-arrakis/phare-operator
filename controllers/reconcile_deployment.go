@@ -49,9 +49,9 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
         println("Error patching Deployment: ", patchErr)
         return patchErr
       }
-      println("Deployment patched successfully")
+      r.Log.Info("Deployment patched successfully", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
     } else {
-      println("No changes detected") // TODO: remove this, it's just for debugging
+      r.Log.Info("No changes detected", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
     }
   } else {
     // Handle other potential errors
@@ -67,6 +67,7 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // Anywaways, it works for now.
 // NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
+
   existingDeployment.Spec.Template.Spec.Containers = desiredDeployment.Spec.Template.Spec.Containers
   existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
   existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
@@ -82,12 +83,24 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
     // "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
   }
 
-  // Only use the "app" label for the spec level
-  specLabels := map[string]string{
+  // Default pod labels and annotations
+  podLabels := map[string]string{
     "app": phare.Name,
+  }
+  for key, value := range phare.Spec.MicroService.PodLabels {
+    podLabels[key] = value
+  }
+
+  podAnnotations := map[string]string{}
+  for key, value := range phare.Spec.MicroService.PodAnnotations {
+    podAnnotations[key] = value
   }
 
   deployment := &appsv1.Deployment{
+    TypeMeta: metav1.TypeMeta{
+      APIVersion: "apps/v1",
+      Kind:       "Deployment",
+    },
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name,
       Namespace: phare.Namespace,
@@ -95,25 +108,28 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
     },
     Spec: appsv1.DeploymentSpec{
       Selector: &metav1.LabelSelector{
-        MatchLabels: specLabels,
+        MatchLabels: podLabels,
       },
       Replicas: &phare.Spec.MicroService.ReplicaCount,
       Template: corev1.PodTemplateSpec{
         ObjectMeta: metav1.ObjectMeta{
-          Labels: specLabels,
+          Labels:      podLabels,
+          Annotations: podAnnotations,
         },
         Spec: corev1.PodSpec{
           Containers: []corev1.Container{
             {
-              Name:         phare.Name,
-              Image:        phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
-              VolumeMounts: phare.Spec.MicroService.VolumeMounts,
-              Command:      phare.Spec.MicroService.Command,
-              Args:         phare.Spec.MicroService.Args,
-              Env:          phare.Spec.MicroService.Env,
-              EnvFrom:      phare.Spec.MicroService.EnvFrom,
-              Ports:        phare.Spec.MicroService.Ports,
-              Resources:    phare.Spec.MicroService.ResourceRequirements,
+              Name:           phare.Name,
+              Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
+              VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
+              Command:        phare.Spec.MicroService.Command,
+              Args:           phare.Spec.MicroService.Args,
+              Env:            phare.Spec.MicroService.Env,
+              EnvFrom:        phare.Spec.MicroService.EnvFrom,
+              Ports:          phare.Spec.MicroService.Ports,
+              Resources:      phare.Spec.MicroService.ResourceRequirements,
+              LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
+              ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
             },
           },
           InitContainers: phare.Spec.MicroService.InitContainers,
