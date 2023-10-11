@@ -49,9 +49,9 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
         println("Error patching Deployment: ", patchErr)
         return patchErr
       }
-      println("Deployment patched successfully")
+      r.Log.Info("Deployment patched successfully", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
     } else {
-      println("No changes detected") // TODO: remove this, it's just for debugging
+      r.Log.Info("No changes detected", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
     }
   } else {
     // Handle other potential errors

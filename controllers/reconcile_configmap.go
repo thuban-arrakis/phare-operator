@@ -68,10 +68,21 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 // Generates a ConfigMap object based on the Phare CR
 func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.ConfigMap {
 
+  metadataLabels := map[string]string{
+    "app":                          phare.Name,
+    "app.kubernetes.io/created-by": "phare-controller",
+    // "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
+  }
+
   configMap := &corev1.ConfigMap{
+    TypeMeta: metav1.TypeMeta{
+      APIVersion: "v1",
+      Kind:       "ConfigMap",
+    },
     ObjectMeta: metav1.ObjectMeta{
       Name:      phare.Name + "-config",
       Namespace: phare.Namespace,
+      Labels:    metadataLabels,
     },
     Data: phare.Spec.ToolChain.Config,
   }

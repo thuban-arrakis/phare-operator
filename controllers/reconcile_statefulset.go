@@ -39,16 +39,16 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
     }
 
     diff := cmp.Diff(originalStatefulSet, existingStatefulSet, IgnoreContainerFields)
-    println("Diff: ", diff) // TODO: remove this, it's just for debugging
+    // println("Diff: ", diff) // TODO: remove this, it's just for debugging
     if diff != "" {
       patch := client.MergeFrom(originalStatefulSet)
       if patchErr := r.Patch(ctx, existingStatefulSet, patch); patchErr != nil {
         println("Error patching StatefulSet: ", patchErr)
         return patchErr
       }
-      println("StatefulSet patched successfully")
+      r.Log.Info("StatefulSet patched successfully", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
     } else {
-      println("No changes detected in StatefulSet")
+      r.Log.Info("No changes detected", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
     }
   } else {
     return err
