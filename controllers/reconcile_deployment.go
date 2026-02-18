@@ -29,17 +29,16 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 			return createErr
 		}
 	} else if err == nil {
-		// Make a deep copy of existingDeployment to store the original state
+		// Keep a copy so we can generate a patch only when something changed.
 		originalDeployment := existingDeployment.DeepCopy()
 
-		// Modify the existingDeployment in memory
+		// Merge the desired values into the current object.
 		r.mergeDeployments(desiredDeployment, existingDeployment)
 
-		// Use cmp.Diff to determine differences
+		// Compare old and new objects before patching.
 		diff := cmp.Diff(originalDeployment, existingDeployment, podTemplateCompareOptions())
-		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
-			// Calculate the patch using MergeFrom if differences are detected
+			// Patch only if we found changes.
 			patch := client.MergeFrom(originalDeployment)
 			if patchErr := r.Patch(ctx, existingDeployment, patch); patchErr != nil {
 				r.Log.Error(patchErr, "Error patching Deployment", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
@@ -50,18 +49,14 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 			r.Log.Info("No changes detected", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
 		}
 	} else {
-		// Handle other potential errors
 		return err
 	}
 
 	return nil
 }
 
-// This is a mess, but at this point I've not found a better way to do this.
-// Maybe I should just use the k8s client-go library directly?
-// Or wrap Statefulset/Deployment pod template spec in a struct and use that?
-// Anywaways, it works for now.
-// NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
+// mergeDeployments applies controller-managed fields while keeping injected sidecars
+// and related volumes that are still in use.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
 	existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
 	existingDeployment.Spec.Template.Labels = copyStringMap(desiredDeployment.Spec.Template.Labels)
@@ -78,14 +73,14 @@ func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment
 }
 
 func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {
-	// Keep the same labels at the metadata level
+	// Base labels for resources created by this controller.
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
 		// "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
 	}
 
-	// Default pod labels and annotations
+	// Default pod labels and annotations.
 	podLabels := map[string]string{
 		"app": phare.Name,
 	}
@@ -151,14 +146,14 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 		return nil
 	}
 
-	// Check if the Spec.Toolchain.Config is not empty and add the ConfigMap volume
+	// Add config volume only when toolchain config exists.
 	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config) > 0 {
 		r.addConfigVolumeToDeployment(deployment, phare)
 	}
 
-	// Preserve the default mode of the volumes.
+	// Set default file mode for Secret/ConfigMap volumes.
 	for i := range deployment.Spec.Template.Spec.Volumes {
-		UpdateVolume(&deployment.Spec.Template.Spec.Volumes[i], 420) // or any default mode you want
+		UpdateVolume(&deployment.Spec.Template.Spec.Volumes[i], 420)
 	}
 
 	return deployment
@@ -198,9 +193,7 @@ func (r *PhareReconciler) addConfigVolumeToDeployment(deployment *appsv1.Deploym
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append([]corev1.VolumeMount{volumeMount}, deployment.Spec.Template.Spec.Containers[0].VolumeMounts...)
 }
 
-// UpdateVolume updates the default mode of a volume. And that's it. Really.
-// NOTE: Can be optimized by using a pointer to the default mode.
-// Or rid of at all, since we can use IgnoreFields in cmp.Diff.
+// UpdateVolume sets the default mode for Secret and ConfigMap volumes.
 func UpdateVolume(volume *corev1.Volume, defaultMode int32) {
 	if volume.Secret != nil {
 		volume.Secret.DefaultMode = &defaultMode

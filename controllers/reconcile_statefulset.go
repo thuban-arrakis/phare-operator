@@ -30,11 +30,11 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 			return createErr
 		}
 	} else if err == nil {
+		// Keep a copy so we can patch only when something changed.
 		originalStatefulSet := existingStatefulSet.DeepCopy()
 		r.mergeStatefulSets(desiredStatefulSet, existingStatefulSet)
 
 		diff := cmp.Diff(originalStatefulSet, existingStatefulSet, podTemplateCompareOptions())
-		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
 			patch := client.MergeFrom(originalStatefulSet)
 			if patchErr := r.Patch(ctx, existingStatefulSet, patch); patchErr != nil {
@@ -71,14 +71,14 @@ func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStateful
 
 func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.StatefulSet {
 
-	// Keep the same labels at the metadata level
+	// Base labels for resources created by this controller.
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
 		// "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
 	}
 
-	// Default pod labels and annotations
+	// Default pod labels and annotations.
 	podLabels := map[string]string{
 		"app": phare.Name,
 	}
@@ -149,19 +149,18 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 		statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, phare.Spec.MicroService.ExtraContainers...)
 	}
 
-	// Check if the Spec.Toolchain.Config is not empty and add the ConfigMap volume
+	// Add config volume only when toolchain config exists.
 	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config) > 0 {
 		r.addConfigVolumeToStatefulset(statefulSet, phare)
 	}
 
-	// Preserve the default mode of the volumes.
+	// Set default file mode for Secret/ConfigMap volumes.
 	for i := range statefulSet.Spec.Template.Spec.Volumes {
-		UpdateVolume(&statefulSet.Spec.Template.Spec.Volumes[i], 420) // or any default mode you want
+		UpdateVolume(&statefulSet.Spec.Template.Spec.Volumes[i], 420)
 	}
 
-	// Go-templates support
+	// Render liveness probe templates if present.
 	if err := tpl.ProcessLivenessProbeTemplate(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe, phare.ObjectMeta); err != nil {
-		// Log or handle the error
 		r.Log.Error(err, "Error processing liveness probe template")
 		return nil
 	}

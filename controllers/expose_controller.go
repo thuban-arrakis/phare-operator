@@ -40,7 +40,7 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 		patch := client.MergeFrom(existingHttpRoute.DeepCopy())
 		r.Log.Info("Updating HTTPRoute", "HTTPRoute.Namespace", existingHttpRoute.Namespace, "HTTPRoute.Name", existingHttpRoute.Name)
 
-		// Copy desired service's spec to existingHttpRoute
+		// Copy desired spec into the current object before patching.
 		existingHttpRoute.Spec = desired.Spec
 		existingHttpRoute.ObjectMeta.Labels = copyStringMapPreserveNil(desired.ObjectMeta.Labels)
 
@@ -153,7 +153,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 		patch := client.MergeFrom(existingGCPBackendPolicy.DeepCopy())
 		r.Log.Info("Updating GCPBackendPolicy", "GCPBackendPolicy.Namespace", existingGCPBackendPolicy.GetNamespace(), "GCPBackendPolicy.Name", existingGCPBackendPolicy.GetName())
 
-		// Copy desired service's spec to existingGCPBackendPolicy
+		// Copy desired spec into the current object before patching.
 		existingGCPBackendPolicy.Object["spec"] = desired.Object["spec"]
 		existingGCPBackendPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 
@@ -183,7 +183,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 		spec = map[string]interface{}{}
 	}
 
-	// Initialize the HealthCheckPolicy
+	// Build HealthCheckPolicy from the Phare spec.
 	healthCheckPolicy := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "networking.gke.io/v1",
@@ -237,7 +237,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 		patch := client.MergeFrom(existingHealthCheckPolicy.DeepCopy())
 		r.Log.Info("Updating HealthCheckPolicy", "HealthCheckPolicy.Namespace", existingHealthCheckPolicy.GetNamespace(), "HealthCheckPolicy.Name", existingHealthCheckPolicy.GetName())
 
-		// Copy desired service's spec to existingHealthCheckPolicy
+		// Copy desired spec into the current object before patching.
 		existingHealthCheckPolicy.Object["spec"] = desired.Object["spec"]
 		existingHealthCheckPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 

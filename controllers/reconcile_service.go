@@ -15,7 +15,7 @@ import (
 
 const reallocateNodePortAnnotation = "phare.localcorp.internal/reallocate-nodeport"
 
-// Also untested, check it later.
+// reconcileService creates, updates, or deletes the Service for a Phare resource.
 func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingService := &corev1.Service{}
 	err := r.Get(ctx, req.NamespacedName, existingService)
@@ -50,7 +50,7 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 		return err
 	}
 
-	// If service spec or controller-managed metadata drifts, update it.
+	// Update when spec or controller-managed metadata changed.
 	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
 		!stringMapsEqualNilEmpty(existingService.Labels, desiredService.Labels) ||
 		!stringMapsEqualNilEmpty(existingService.Annotations, desiredService.Annotations) {
@@ -85,7 +85,7 @@ func (r *PhareReconciler) updateService(ctx context.Context, service *corev1.Ser
 
 func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Service {
 
-	// Keep the same labels at the metadata level
+	// Base labels for resources created by this controller.
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
@@ -101,7 +101,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 			Name:        phare.Name,
 			Namespace:   phare.Namespace,
 			Annotations: copyStringMapPreserveNil(phare.Annotations),
-			Labels:      mergeStringMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
+			Labels:      mergeStringMaps(metadataLabels, phare.Labels),
 		},
 		Spec: *phare.Spec.Service,
 	}
@@ -128,9 +128,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 	return service
 }
 
-// If you want to compare the ServiceSpec fields, you can use this function
-// to check if the existing and desired ServiceSpecs differ.
-// Func returns true if the ServiceSpecs differ, false otherwise.
+// serviceSpecsDiffer compares fields this controller manages in ServiceSpec.
 func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	if !reflect.DeepEqual(existing.Ports, desired.Ports) {
 		return true
@@ -143,8 +141,6 @@ func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	if !reflect.DeepEqual(existing.Type, desired.Type) {
 		return true
 	}
-
-	// Add comparisons for other fields you care about
 
 	return false
 }

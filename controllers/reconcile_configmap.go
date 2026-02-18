@@ -17,10 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The main function to reconcile the ConfigMap
-// If the ConfigMap doesn't exist, create it
-// If the ConfigMap exists, update it if necessary
-// If the ConfigMap exists but is not specified in the Phare CR, delete it.
+// reconcileConfigMap creates, updates, or deletes the managed ConfigMap.
 func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1beta1.Phare) error {
 	// 1. Check if ToolChain and Config are non-nil.
 	if phare.Spec.ToolChain == nil || phare.Spec.ToolChain.Config == nil {
@@ -68,7 +65,7 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 	return nil
 }
 
-// Generates a ConfigMap object based on the Phare CR
+// generateConfigMap builds the desired ConfigMap from the Phare spec.
 func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.ConfigMap {
 
 	metadataLabels := map[string]string{
@@ -133,8 +130,8 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-// Utility function to hash the data of a ConfigMap
-// CAUTION!: This function will return an error if the ConfigMap doesn't exist.
+// hashConfigMapData returns a deterministic hash of ConfigMap data.
+// It returns an error if the ConfigMap does not exist.
 
 func (r *PhareReconciler) hashConfigMapData(configMapName string, namespace string) (string, error) {
 	cm := &corev1.ConfigMap{}
