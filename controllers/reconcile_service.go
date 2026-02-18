@@ -49,11 +49,11 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 
 	// If service spec or controller-managed metadata drifts, update it.
 	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
-		!reflect.DeepEqual(existingService.Labels, desiredService.Labels) ||
-		!reflect.DeepEqual(existingService.Annotations, desiredService.Annotations) {
+		!stringMapsEqualNilEmpty(existingService.Labels, desiredService.Labels) ||
+		!stringMapsEqualNilEmpty(existingService.Annotations, desiredService.Annotations) {
 		existingService.Spec = mergeServiceSpecPreservingImmutable(existingService.Spec, desiredService.Spec)
-		existingService.Labels = copyStringMap(desiredService.Labels)
-		existingService.Annotations = copyStringMap(desiredService.Annotations)
+		existingService.Labels = copyStringMapPreserveNil(desiredService.Labels)
+		existingService.Annotations = copyStringMapPreserveNil(desiredService.Annotations)
 		return r.updateService(ctx, existingService)
 	}
 
@@ -93,7 +93,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        phare.Name,
 			Namespace:   phare.Namespace,
-			Annotations: phare.Annotations,
+			Annotations: copyStringMapPreserveNil(phare.Annotations),
 			Labels:      mergeStringMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
 		},
 		Spec: *phare.Spec.Service,
@@ -150,6 +150,7 @@ func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec) c
 	merged.IPFamilies = append([]corev1.IPFamily(nil), existing.IPFamilies...)
 	merged.IPFamilyPolicy = existing.IPFamilyPolicy
 	merged.HealthCheckNodePort = existing.HealthCheckNodePort
+	merged.LoadBalancerClass = existing.LoadBalancerClass
 
 	if len(existing.Ports) > 0 {
 		existingByKey := make(map[string]corev1.ServicePort, len(existing.Ports))

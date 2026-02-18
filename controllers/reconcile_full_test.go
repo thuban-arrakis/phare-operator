@@ -97,13 +97,14 @@ func TestReconcileServiceUpdatePreservesImmutableFields(t *testing.T) {
 			Namespace: phare.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
-			Type:        corev1.ServiceTypeNodePort,
-			ClusterIP:   "10.0.0.10",
-			ClusterIPs:  []string{"10.0.0.10"},
-			IPFamilies:  []corev1.IPFamily{corev1.IPv4Protocol},
-			Selector:    map[string]string{"app": "demo"},
-			Ports:       []corev1.ServicePort{{Name: "http", Port: 80, NodePort: 30080, TargetPort: intstrFromInt(80)}},
-			ExternalIPs: []string{"1.2.3.4"},
+			Type:              corev1.ServiceTypeNodePort,
+			ClusterIP:         "10.0.0.10",
+			ClusterIPs:        []string{"10.0.0.10"},
+			IPFamilies:        []corev1.IPFamily{corev1.IPv4Protocol},
+			LoadBalancerClass: ptrTo("internal-lb"),
+			Selector:          map[string]string{"app": "demo"},
+			Ports:             []corev1.ServicePort{{Name: "http", Port: 80, NodePort: 30080, TargetPort: intstrFromInt(80)}},
+			ExternalIPs:       []string{"1.2.3.4"},
 		},
 	}
 
@@ -129,6 +130,9 @@ func TestReconcileServiceUpdatePreservesImmutableFields(t *testing.T) {
 	}
 	if current.Spec.Ports[0].NodePort != 30080 {
 		t.Fatalf("expected allocated nodePort to be preserved, got %d", current.Spec.Ports[0].NodePort)
+	}
+	if current.Spec.LoadBalancerClass == nil || *current.Spec.LoadBalancerClass != "internal-lb" {
+		t.Fatalf("expected loadBalancerClass to be preserved, got %#v", current.Spec.LoadBalancerClass)
 	}
 }
 
@@ -528,6 +532,10 @@ func basePhare(name, namespace string) *pharev1beta1.Phare {
 
 func intstrFromInt(v int) intstr.IntOrString {
 	return intstr.FromInt(v)
+}
+
+func ptrTo(s string) *string {
+	return &s
 }
 
 func containerExists(items []corev1.Container, name string) bool {

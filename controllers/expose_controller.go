@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +34,7 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 	}
 
 	if !reflect.DeepEqual(existingHttpRoute.Spec, desired.Spec) ||
-		!reflect.DeepEqual(existingHttpRoute.GetLabels(), desired.GetLabels()) {
+		!stringMapsEqualNilEmpty(existingHttpRoute.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("HTTPRoute does not match the desired configuration", "HTTPRoute.Namespace", desired.Namespace, "HTTPRoute.Name", desired.Name)
 
 		patch := client.MergeFrom(existingHttpRoute.DeepCopy())
@@ -41,7 +42,7 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 
 		// Copy desired service's spec to existingHttpRoute
 		existingHttpRoute.Spec = desired.Spec
-		existingHttpRoute.ObjectMeta.Labels = copyStringMap(desired.ObjectMeta.Labels)
+		existingHttpRoute.ObjectMeta.Labels = copyStringMapPreserveNil(desired.ObjectMeta.Labels)
 
 		if err := r.Patch(ctx, existingHttpRoute, patch, client.FieldOwner("phare-controller")); err != nil {
 			return ctrl.Result{}, err
@@ -94,6 +95,12 @@ func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *un
 		"kustomize.toolkit.fluxcd.io/namespace": "flux-system",
 	}
 
+	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.GCPBackendPolicy)
+	if err != nil {
+		r.Log.Error(err, "Failed to convert GCPBackendPolicy spec to unstructured map")
+		spec = map[string]interface{}{}
+	}
+
 	gcpBackendPolicy := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "networking.gke.io/v1",
@@ -103,7 +110,7 @@ func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *un
 				"namespace": phare.Namespace,
 				"labels":    metadataLabels,
 			},
-			"spec": phare.Spec.ToolChain.GCPBackendPolicy,
+			"spec": spec,
 		},
 	}
 	if err := ctrl.SetControllerReference(phare, gcpBackendPolicy, r.Scheme); err != nil {
@@ -138,7 +145,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 	}
 
 	if !reflect.DeepEqual(existingGCPBackendPolicy.Object["spec"], desired.Object["spec"]) ||
-		!reflect.DeepEqual(existingGCPBackendPolicy.GetLabels(), desired.GetLabels()) {
+		!stringMapsEqualNilEmpty(existingGCPBackendPolicy.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("GCPBackendPolicy does not match the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
 
 		patch := client.MergeFrom(existingGCPBackendPolicy.DeepCopy())
@@ -146,7 +153,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 
 		// Copy desired service's spec to existingGCPBackendPolicy
 		existingGCPBackendPolicy.Object["spec"] = desired.Object["spec"]
-		existingGCPBackendPolicy.SetLabels(copyStringMap(desired.GetLabels()))
+		existingGCPBackendPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingGCPBackendPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
 			return ctrl.Result{}, err
@@ -167,6 +174,12 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 	//   // Define your labels here
 	// }
 
+	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.HealthCheckPolicy)
+	if err != nil {
+		r.Log.Error(err, "Failed to convert HealthCheckPolicy spec to unstructured map")
+		spec = map[string]interface{}{}
+	}
+
 	// Initialize the HealthCheckPolicy
 	healthCheckPolicy := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -177,7 +190,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 				"namespace": phare.Namespace,
 				// "labels":    metadataLabels,
 			},
-			"spec": phare.Spec.ToolChain.HealthCheckPolicy,
+			"spec": spec,
 		},
 	}
 	if err := ctrl.SetControllerReference(phare, healthCheckPolicy, r.Scheme); err != nil {
@@ -215,7 +228,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 	}
 
 	if !reflect.DeepEqual(existingHealthCheckPolicy.Object["spec"], desired.Object["spec"]) ||
-		!reflect.DeepEqual(existingHealthCheckPolicy.GetLabels(), desired.GetLabels()) {
+		!stringMapsEqualNilEmpty(existingHealthCheckPolicy.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("HealthCheckPolicy does not match the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
 
 		patch := client.MergeFrom(existingHealthCheckPolicy.DeepCopy())
@@ -223,7 +236,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 
 		// Copy desired service's spec to existingHealthCheckPolicy
 		existingHealthCheckPolicy.Object["spec"] = desired.Object["spec"]
-		existingHealthCheckPolicy.SetLabels(copyStringMap(desired.GetLabels()))
+		existingHealthCheckPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingHealthCheckPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
 			return ctrl.Result{}, err
