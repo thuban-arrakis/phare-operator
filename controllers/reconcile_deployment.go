@@ -13,7 +13,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
@@ -36,20 +35,14 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 		// Modify the existingDeployment in memory
 		r.mergeDeployments(desiredDeployment, existingDeployment)
 
-		var IgnoreContainerFields = cmp.Options{
-			cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
-			cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
-			cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
-		}
-
 		// Use cmp.Diff to determine differences
-		diff := cmp.Diff(originalDeployment, existingDeployment, IgnoreContainerFields)
+		diff := cmp.Diff(originalDeployment, existingDeployment, podTemplateCompareOptions())
 		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
 			// Calculate the patch using MergeFrom if differences are detected
 			patch := client.MergeFrom(originalDeployment)
 			if patchErr := r.Patch(ctx, existingDeployment, patch); patchErr != nil {
-				println("Error patching Deployment: ", patchErr)
+				r.Log.Error(patchErr, "Error patching Deployment", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
 				return patchErr
 			}
 			r.Log.Info("Deployment patched successfully", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
@@ -133,6 +126,7 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 							Resources:      phare.Spec.MicroService.ResourceRequirements,
 							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
 							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+							StartupProbe:   phare.Spec.MicroService.StartupProbe,
 						},
 					},
 					InitContainers: phare.Spec.MicroService.InitContainers,

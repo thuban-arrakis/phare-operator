@@ -13,7 +13,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	tpl "github.com/localcorp/phare-controller/pkg/go-templates"
 )
@@ -34,19 +33,12 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 		originalStatefulSet := existingStatefulSet.DeepCopy()
 		r.mergeStatefulSets(desiredStatefulSet, existingStatefulSet)
 
-		// Define the ignored fields for containers, probes, etc.
-		var IgnoreContainerFields = cmp.Options{
-			cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
-			cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
-			cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
-		}
-
-		diff := cmp.Diff(originalStatefulSet, existingStatefulSet, IgnoreContainerFields)
+		diff := cmp.Diff(originalStatefulSet, existingStatefulSet, podTemplateCompareOptions())
 		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
 			patch := client.MergeFrom(originalStatefulSet)
 			if patchErr := r.Patch(ctx, existingStatefulSet, patch); patchErr != nil {
-				println("Error patching StatefulSet: ", patchErr)
+				r.Log.Error(patchErr, "Error patching StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
 				return patchErr
 			}
 			r.Log.Info("StatefulSet patched successfully", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
@@ -127,6 +119,7 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 							Resources:      phare.Spec.MicroService.ResourceRequirements,
 							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
 							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+							StartupProbe:   phare.Spec.MicroService.StartupProbe,
 						},
 					},
 					InitContainers: phare.Spec.MicroService.InitContainers,

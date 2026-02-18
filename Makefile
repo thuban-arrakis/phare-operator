@@ -105,6 +105,13 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: unit-test
+unit-test: fmt vet ## Run unit/integration tests without downloading controller tooling.
+	go test ./... -coverprofile cover.out
+
+.PHONY: check
+check: fmt vet unit-test ## Fast local verification for CI and pre-commit.
+
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out

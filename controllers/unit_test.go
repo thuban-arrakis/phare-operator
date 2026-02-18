@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -137,5 +139,99 @@ func TestMergeLabelMaps(t *testing.T) {
 	}
 	if merged["b"] != "new" {
 		t.Fatalf("expected desired map to override existing key")
+	}
+}
+
+func TestGenerateConfigMapDoesNotMutateSpecConfig(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := pharev1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add phare scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+		Scheme: scheme,
+	}
+
+	phare := pharev1beta1.Phare{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: pharev1beta1.PhareSpec{
+			ToolChain: &pharev1beta1.ToolChainSpec{
+				Config: pharev1beta1.ConfigSpec{
+					"raw":       "plain",
+					"templated": "/{{ .Name }}/ready",
+				},
+			},
+		},
+	}
+
+	cm := r.generateConfigMap(phare)
+	if cm.Data["templated"] != "/app/ready" {
+		t.Fatalf("expected templated value to be rendered, got %q", cm.Data["templated"])
+	}
+	if phare.Spec.ToolChain.Config["templated"] != "/{{ .Name }}/ready" {
+		t.Fatalf("expected source spec config to remain unchanged, got %q", phare.Spec.ToolChain.Config["templated"])
+	}
+}
+
+func TestStartupProbeIsAppliedToWorkloads(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := pharev1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add phare scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add apps scheme: %v", err)
+	}
+
+	r := &PhareReconciler{Scheme: scheme}
+
+	startup := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/startup",
+				Port: intstr.FromInt(8080),
+			},
+		},
+	}
+
+	phare := &pharev1beta1.Phare{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+			UID:       "uid-1",
+		},
+		Spec: pharev1beta1.PhareSpec{
+			MicroService: pharev1beta1.MicroServiceSpec{
+				Kind:         "Deployment",
+				ReplicaCount: 1,
+				Image: pharev1beta1.ImageSpec{
+					Repository: "nginx",
+					Tag:        "1.27",
+				},
+				StartupProbe: startup,
+			},
+		},
+	}
+
+	deploy := r.newDeployment(phare)
+	if deploy == nil {
+		t.Fatalf("expected deployment to be created")
+	}
+	if deploy.Spec.Template.Spec.Containers[0].StartupProbe == nil {
+		t.Fatalf("expected startupProbe on deployment container")
+	}
+
+	stateful := r.newStatefulSet(phare)
+	if stateful == nil {
+		t.Fatalf("expected statefulset to be created")
+	}
+	if stateful.Spec.Template.Spec.Containers[0].StartupProbe == nil {
+		t.Fatalf("expected startupProbe on statefulset container")
 	}
 }
