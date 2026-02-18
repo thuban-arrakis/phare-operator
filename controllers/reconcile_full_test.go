@@ -175,6 +175,9 @@ func TestReconcileServiceCanReallocateNodePortViaAnnotation(t *testing.T) {
 	if current.Spec.Ports[0].NodePort != 0 {
 		t.Fatalf("expected nodePort to be left unset for reallocation, got %d", current.Spec.Ports[0].NodePort)
 	}
+	if _, ok := current.Annotations[reallocateNodePortAnnotation]; ok {
+		t.Fatalf("expected control annotation not to be copied to Service, got %#v", current.Annotations)
+	}
 }
 
 func TestReconcileServiceMetadataIsAuthoritative(t *testing.T) {

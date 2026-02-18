@@ -13,6 +13,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+// reallocateNodePortAnnotation is an opt-in control flag on the Phare resource.
+// When true, the controller does not preserve existing NodePort values.
 const reallocateNodePortAnnotation = "phare.localcorp.internal/reallocate-nodeport"
 
 // reconcileService creates, updates, or deletes the Service for a Phare resource.
@@ -51,13 +53,14 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 	}
 
 	// Update when spec or controller-managed metadata changed.
-	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
+	preserveNodePort := !shouldReallocateNodePorts(&phare)
+	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec, preserveNodePort) ||
 		!stringMapsEqualNilEmpty(existingService.Labels, desiredService.Labels) ||
 		!stringMapsEqualNilEmpty(existingService.Annotations, desiredService.Annotations) {
 		existingService.Spec = mergeServiceSpecPreservingImmutable(
 			existingService.Spec,
 			desiredService.Spec,
-			!shouldReallocateNodePorts(&phare),
+			preserveNodePort,
 		)
 		existingService.Labels = copyStringMapPreserveNil(desiredService.Labels)
 		existingService.Annotations = copyStringMapPreserveNil(desiredService.Annotations)
@@ -100,7 +103,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        phare.Name,
 			Namespace:   phare.Namespace,
-			Annotations: copyStringMapPreserveNil(phare.Annotations),
+			Annotations: serviceAnnotationsFromPhare(phare.Annotations),
 			Labels:      mergeStringMaps(metadataLabels, phare.Labels),
 		},
 		Spec: *phare.Spec.Service,
@@ -128,17 +131,19 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 	return service
 }
 
-// serviceSpecsDiffer compares fields this controller manages in ServiceSpec.
-func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
-	if !reflect.DeepEqual(existing.Ports, desired.Ports) {
+// serviceSpecsDiffer compares managed fields after applying preservation rules.
+func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec, preserveNodePort bool) bool {
+	normalizedDesired := mergeServiceSpecPreservingImmutable(*existing, *desired, preserveNodePort)
+
+	if !reflect.DeepEqual(existing.Ports, normalizedDesired.Ports) {
 		return true
 	}
 
-	if !reflect.DeepEqual(existing.Selector, desired.Selector) {
+	if !reflect.DeepEqual(existing.Selector, normalizedDesired.Selector) {
 		return true
 	}
 
-	if !reflect.DeepEqual(existing.Type, desired.Type) {
+	if !reflect.DeepEqual(existing.Type, normalizedDesired.Type) {
 		return true
 	}
 
@@ -194,4 +199,16 @@ func shouldReallocateNodePorts(phare *pharev1beta1.Phare) bool {
 	default:
 		return false
 	}
+}
+
+func serviceAnnotationsFromPhare(in map[string]string) map[string]string {
+	out := copyStringMapPreserveNil(in)
+	if out == nil {
+		return nil
+	}
+	delete(out, reallocateNodePortAnnotation)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

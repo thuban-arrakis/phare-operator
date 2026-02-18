@@ -118,14 +118,21 @@ func TestServiceSpecsDiffer(t *testing.T) {
 	}
 
 	same := base.DeepCopy()
-	if serviceSpecsDiffer(&base, same) {
+	if serviceSpecsDiffer(&base, same, true) {
 		t.Fatalf("expected same specs to not differ")
 	}
 
 	changed := base.DeepCopy()
 	changed.Type = corev1.ServiceTypeNodePort
-	if !serviceSpecsDiffer(&base, changed) {
+	if !serviceSpecsDiffer(&base, changed, true) {
 		t.Fatalf("expected differing specs to be detected")
+	}
+
+	withNodePort := base.DeepCopy()
+	withNodePort.Ports[0].NodePort = 30080
+	desiredOmitNodePort := base.DeepCopy()
+	if serviceSpecsDiffer(withNodePort, desiredOmitNodePort, true) {
+		t.Fatalf("expected preserved nodePort to not trigger diff")
 	}
 }
 
@@ -176,6 +183,49 @@ func TestShouldReallocateNodePorts(t *testing.T) {
 	phare.Annotations[reallocateNodePortAnnotation] = "false"
 	if shouldReallocateNodePorts(phare) {
 		t.Fatalf("expected false annotation to disable reallocation")
+	}
+}
+
+func TestSpecMatchesDesired(t *testing.T) {
+	existing := map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": int64(30),
+			"extra":      "stale",
+		},
+	}
+	desired := map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": int(30),
+		},
+	}
+	if specMatchesDesired(existing, desired) {
+		t.Fatalf("expected stale extra field to be detected as drift")
+	}
+
+	existingNoExtra := map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": int64(30),
+		},
+	}
+	if !specMatchesDesired(existingNoExtra, desired) {
+		t.Fatalf("expected numeric type normalization to match int and int64")
+	}
+}
+
+func TestServiceAnnotationsFromPhare(t *testing.T) {
+	in := map[string]string{
+		"owner":                      "team-a",
+		reallocateNodePortAnnotation: "true",
+	}
+	out := serviceAnnotationsFromPhare(in)
+	if out == nil {
+		t.Fatalf("expected filtered annotations map")
+	}
+	if out["owner"] != "team-a" {
+		t.Fatalf("expected owner annotation to remain, got %#v", out)
+	}
+	if _, ok := out[reallocateNodePortAnnotation]; ok {
+		t.Fatalf("expected control annotation to be removed, got %#v", out)
 	}
 }
 
