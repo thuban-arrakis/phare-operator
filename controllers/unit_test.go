@@ -134,6 +134,14 @@ func TestServiceSpecsDiffer(t *testing.T) {
 	if serviceSpecsDiffer(withNodePort, desiredOmitNodePort, true) {
 		t.Fatalf("expected preserved nodePort to not trigger diff")
 	}
+
+	existingWithPort := base.DeepCopy()
+	existingWithPort.Ports[0].NodePort = 30080
+	desiredWithDifferentPort := base.DeepCopy()
+	desiredWithDifferentPort.Ports[0].NodePort = 30090
+	if !serviceSpecsDiffer(existingWithPort, desiredWithDifferentPort, false) {
+		t.Fatalf("expected nodePort difference to be detected when preservation is disabled")
+	}
 }
 
 func TestMergeStringMaps(t *testing.T) {
@@ -187,6 +195,16 @@ func TestShouldReallocateNodePorts(t *testing.T) {
 }
 
 func TestSpecMatchesDesired(t *testing.T) {
+	if !specMatchesDesired(nil, nil) {
+		t.Fatalf("expected nil specs to match")
+	}
+	if specMatchesDesired(nil, map[string]interface{}{}) {
+		t.Fatalf("expected nil and empty map to differ")
+	}
+	if !specMatchesDesired(map[string]interface{}{}, map[string]interface{}{}) {
+		t.Fatalf("expected empty maps to match")
+	}
+
 	existing := map[string]interface{}{
 		"default": map[string]interface{}{
 			"timeoutSec": int64(30),
@@ -210,9 +228,28 @@ func TestSpecMatchesDesired(t *testing.T) {
 	if !specMatchesDesired(existingNoExtra, desired) {
 		t.Fatalf("expected numeric type normalization to match int and int64")
 	}
+
+	existingMissingField := map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": int64(30),
+		},
+	}
+	desiredWithNewField := map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": int(30),
+			"port":       int(8080),
+		},
+	}
+	if specMatchesDesired(existingMissingField, desiredWithNewField) {
+		t.Fatalf("expected new field in desired to be detected as drift")
+	}
 }
 
 func TestServiceAnnotationsFromPhare(t *testing.T) {
+	if out := serviceAnnotationsFromPhare(nil); out != nil {
+		t.Fatalf("expected nil input to return nil, got %#v", out)
+	}
+
 	in := map[string]string{
 		"owner":                      "team-a",
 		reallocateNodePortAnnotation: "true",
@@ -226,6 +263,11 @@ func TestServiceAnnotationsFromPhare(t *testing.T) {
 	}
 	if _, ok := out[reallocateNodePortAnnotation]; ok {
 		t.Fatalf("expected control annotation to be removed, got %#v", out)
+	}
+
+	onlyControl := map[string]string{reallocateNodePortAnnotation: "true"}
+	if out := serviceAnnotationsFromPhare(onlyControl); out != nil {
+		t.Fatalf("expected nil when only control annotation present, got %#v", out)
 	}
 }
 
