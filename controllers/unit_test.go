@@ -129,11 +129,11 @@ func TestServiceSpecsDiffer(t *testing.T) {
 	}
 }
 
-func TestMergeLabelMaps(t *testing.T) {
+func TestMergeStringMaps(t *testing.T) {
 	existing := map[string]string{"a": "1", "b": "old"}
 	desired := map[string]string{"b": "new", "c": "3"}
 
-	merged := mergeLabelMaps(existing, desired)
+	merged := mergeStringMaps(existing, desired)
 	if merged["a"] != "1" || merged["c"] != "3" {
 		t.Fatalf("expected keys from both maps in merge result")
 	}

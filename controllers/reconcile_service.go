@@ -90,7 +90,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 			Name:        phare.Name,
 			Namespace:   phare.Namespace,
 			Annotations: phare.Annotations,
-			Labels:      mergeMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
+			Labels:      mergeStringMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
 		},
 		Spec: *phare.Spec.Service,
 	}
@@ -136,15 +136,4 @@ func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	// Add comparisons for other fields you care about
 
 	return false
-}
-
-func mergeMaps(map1, map2 map[string]string) map[string]string {
-	result := make(map[string]string)
-	for k, v := range map1 {
-		result[k] = v
-	}
-	for k, v := range map2 {
-		result[k] = v
-	}
-	return result
 }

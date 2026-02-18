@@ -174,7 +174,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 		// Copy desired service's spec to existingGCPBackendPolicy
 		existingGCPBackendPolicy.Object["spec"] = desired.Object["spec"]
 		// Add or update labels in the existingGCPBackendPolicy
-		existingGCPBackendPolicy.SetLabels(mergeLabelMaps(existingGCPBackendPolicy.GetLabels(), desired.GetLabels()))
+		existingGCPBackendPolicy.SetLabels(mergeStringMaps(existingGCPBackendPolicy.GetLabels(), desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingGCPBackendPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
 			return ctrl.Result{}, err
@@ -261,7 +261,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 		// Copy desired service's spec to existingHealthCheckPolicy
 		existingHealthCheckPolicy.Object["spec"] = desired.Object["spec"]
 		// Add or update labels in the existingHealthCheckPolicy
-		existingHealthCheckPolicy.SetLabels(mergeLabelMaps(existingHealthCheckPolicy.GetLabels(), desired.GetLabels()))
+		existingHealthCheckPolicy.SetLabels(mergeStringMaps(existingHealthCheckPolicy.GetLabels(), desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingHealthCheckPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
 			return ctrl.Result{}, err
@@ -272,17 +272,6 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func mergeLabelMaps(existing map[string]string, desired map[string]string) map[string]string {
-	merged := make(map[string]string, len(existing)+len(desired))
-	for key, value := range existing {
-		merged[key] = value
-	}
-	for key, value := range desired {
-		merged[key] = value
-	}
-	return merged
 }
 
 // Move this to pkg/utils or something.

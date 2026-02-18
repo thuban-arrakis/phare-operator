@@ -202,7 +202,7 @@ func envFromEqual(a, b corev1.EnvFromSource) bool {
 		return false
 	}
 	if a.ConfigMapRef != nil {
-		if a.ConfigMapRef.Name != b.ConfigMapRef.Name || a.ConfigMapRef.Optional == nil != (b.ConfigMapRef.Optional == nil) {
+		if a.ConfigMapRef.Name != b.ConfigMapRef.Name || (a.ConfigMapRef.Optional == nil) != (b.ConfigMapRef.Optional == nil) {
 			return false
 		}
 		if a.ConfigMapRef.Optional != nil && b.ConfigMapRef.Optional != nil && *a.ConfigMapRef.Optional != *b.ConfigMapRef.Optional {
@@ -213,7 +213,7 @@ func envFromEqual(a, b corev1.EnvFromSource) bool {
 		return false
 	}
 	if a.SecretRef != nil {
-		if a.SecretRef.Name != b.SecretRef.Name || a.SecretRef.Optional == nil != (b.SecretRef.Optional == nil) {
+		if a.SecretRef.Name != b.SecretRef.Name || (a.SecretRef.Optional == nil) != (b.SecretRef.Optional == nil) {
 			return false
 		}
 		if a.SecretRef.Optional != nil && b.SecretRef.Optional != nil && *a.SecretRef.Optional != *b.SecretRef.Optional {
