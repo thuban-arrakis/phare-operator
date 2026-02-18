@@ -59,9 +59,9 @@ func (r *PhareReconciler) cleanupHTTPRoute(ctx context.Context, phare pharev1bet
 		for _, ownerRef := range httpRoute.OwnerReferences {
 			if ownerRef.UID == phare.UID {
 				if err := r.Delete(ctx, &httpRoute); err != nil {
-					r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", phare.Name)
 					return err
 				}
+				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", phare.Name)
 			}
 		}
 	}
@@ -95,9 +95,9 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 		for _, ownerRef := range gcpBackendPolicy.GetOwnerReferences() {
 			if ownerRef.UID == phare.UID {
 				if err := r.Delete(ctx, &gcpBackendPolicy); err != nil {
-					r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
 					return err
 				}
+				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
 			}
 		}
 	}
@@ -129,9 +129,9 @@ func (r *PhareReconciler) cleanupHealthCheckPolicy(ctx context.Context, phare ph
 		for _, ownerRef := range healthCheckPolicy.GetOwnerReferences() {
 			if ownerRef.UID == phare.UID {
 				if err := r.Delete(ctx, &healthCheckPolicy); err != nil {
-					r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HealthCheckPolicy %s", phare.Name)
 					return err
 				}
+				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HealthCheckPolicy %s", phare.Name)
 			}
 		}
 	}
