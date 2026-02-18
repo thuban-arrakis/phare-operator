@@ -7,22 +7,14 @@ metadata:
   name: phare-sample
 spec:
   microservice:
+    kind: StatefulSet
+    replicaCount: 1
     image:
       repository: nginx
       tag: latest
-    imagePullPolicy: IfNotPresent
-    kind: StatefulSet # <-- if you want to use Deployment, change to Deployment
-    replicaCount: 1
     command: ["nginx", "-g", "daemon off;"]
-    # volumeClaimTemplates:
-    # - apiVersion: v1
-    #   kind: PersistentVolumeClaim
-    #   metadata: {}
-    #   spec:
-    #     accessModes: [ "ReadWriteOnce" ]
-    #     resources:
-    #       requests:
-    #         storage: 1Gi
+    ports:
+      - containerPort: 80
     livenessProbe:
       httpGet:
         path: /
@@ -35,18 +27,6 @@ spec:
         port: 80
       initialDelaySeconds: 30
       periodSeconds: 10
-    # extraContainers:
-    #   - name: extra
-    #     image: busybox
-    #     # command: ["sh", "-c", "echo extra"]
-    #     command: ["sh", "-c", "echo extra && nslookup phare-sample && nslookup phare-sample.default && nslookup phare-sample.default.svc.clus && sleep 3600"]
-    #     resources:
-    #       requests:
-    #         memory: "64Mi"
-    #         cpu: "250m"
-    #       limits:
-    #         memory: "128Mi"
-    #         cpu: "500m"
     resourceRequirements:
       requests:
         memory: "128Mi"
@@ -65,19 +45,9 @@ spec:
     volumes:
       - name: empty
         emptyDir: {}
-      - name: secret
-        secret:
-          secretName: phare-sample-secret
-      - name: secret-2
-        secret:
-          secretName: phare-sample-secret-2
     volumeMounts:
       - name: empty
         mountPath: /etc/phare
-      - name: secret
-        mountPath: /etc/phare-secret
-      - name: secret-2
-        mountPath: /etc/phare-secret-2
     initContainers:
       - name: init
         image: busybox
@@ -85,13 +55,6 @@ spec:
         volumeMounts:
           - name: empty
             mountPath: /etc/phare
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "250m"
-          limits:
-            memory: "128Mi"
-            cpu: "500m"
   service:
     ports:
       - name: http
@@ -99,19 +62,15 @@ spec:
         targetPort: 80
   toolchain:
     config:
-      key: '{{ .Name }}'
+      key: "{{ .Name }}"
       config.js: |
         module.exports = {
-          key: 'value'
+          key: "value"
         }
       template.js: |
         module.exports = {
           project: {
-            name: '{{ .Name }}',
-            namespace: '{{ .Namespace }}',
-            labels: {
-              app: '{{ .Name }}',
-              app_kubernetes_io_name: '{{ .Name }}',
-              app_kubernetes_io_created_by: 'operator'
-            }
-          },
+            name: "{{ .Name }}",
+            namespace: "{{ .Namespace }}"
+          }
+        }
