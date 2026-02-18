@@ -53,6 +53,10 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 }
 
 func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStatefulSet *appsv1.StatefulSet) {
+	existingStatefulSet.Spec.Replicas = desiredStatefulSet.Spec.Replicas
+	existingStatefulSet.Spec.Template.Labels = mergeStringMaps(existingStatefulSet.Spec.Template.Labels, desiredStatefulSet.Spec.Template.Labels)
+	existingStatefulSet.Spec.Template.Annotations = mergeStringMaps(existingStatefulSet.Spec.Template.Annotations, desiredStatefulSet.Spec.Template.Annotations)
+
 	spec := &existingStatefulSet.Spec.Template.Spec
 	desired := &desiredStatefulSet.Spec.Template.Spec
 

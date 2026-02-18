@@ -26,6 +26,9 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 	if phare.Spec.ToolChain == nil || phare.Spec.ToolChain.Config == nil {
 		existingConfigMap := &corev1.ConfigMap{}
 		err := r.Get(ctx, client.ObjectKey{Name: phare.Name + "-config", Namespace: phare.Namespace}, existingConfigMap)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
 
 		// If an existing ConfigMap was found, delete it.
 		if err == nil {

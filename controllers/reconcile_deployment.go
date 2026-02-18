@@ -63,6 +63,10 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // Anywaways, it works for now.
 // NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
+	existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
+	existingDeployment.Spec.Template.Labels = mergeStringMaps(existingDeployment.Spec.Template.Labels, desiredDeployment.Spec.Template.Labels)
+	existingDeployment.Spec.Template.Annotations = mergeStringMaps(existingDeployment.Spec.Template.Annotations, desiredDeployment.Spec.Template.Annotations)
+
 	spec := &existingDeployment.Spec.Template.Spec
 	desired := &desiredDeployment.Spec.Template.Spec
 

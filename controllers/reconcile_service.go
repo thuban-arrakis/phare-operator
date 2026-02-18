@@ -49,8 +49,10 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 
 	// If the service exists but there's a difference in spec, update it
 	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) {
-		desiredService.ResourceVersion = existingService.ResourceVersion // preserve the ResourceVersion
-		return r.updateService(ctx, desiredService)
+		existingService.Spec = mergeServiceSpecPreservingImmutable(existingService.Spec, desiredService.Spec)
+		existingService.Labels = mergeStringMaps(existingService.Labels, desiredService.Labels)
+		existingService.Annotations = mergeStringMaps(existingService.Annotations, desiredService.Annotations)
+		return r.updateService(ctx, existingService)
 	}
 
 	return nil
@@ -136,4 +138,36 @@ func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	// Add comparisons for other fields you care about
 
 	return false
+}
+
+func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec) corev1.ServiceSpec {
+	merged := *desired.DeepCopy()
+
+	merged.ClusterIP = existing.ClusterIP
+	merged.ClusterIPs = append([]string(nil), existing.ClusterIPs...)
+	merged.IPFamilies = append([]corev1.IPFamily(nil), existing.IPFamilies...)
+	merged.IPFamilyPolicy = existing.IPFamilyPolicy
+	merged.HealthCheckNodePort = existing.HealthCheckNodePort
+
+	if len(existing.Ports) > 0 {
+		existingByKey := make(map[string]corev1.ServicePort, len(existing.Ports))
+		for _, p := range existing.Ports {
+			key := p.Name
+			if key == "" {
+				key = fmt.Sprintf("%s/%d", p.Protocol, p.Port)
+			}
+			existingByKey[key] = p
+		}
+		for i := range merged.Ports {
+			key := merged.Ports[i].Name
+			if key == "" {
+				key = fmt.Sprintf("%s/%d", merged.Ports[i].Protocol, merged.Ports[i].Port)
+			}
+			if current, ok := existingByKey[key]; ok && merged.Ports[i].NodePort == 0 {
+				merged.Ports[i].NodePort = current.NodePort
+			}
+		}
+	}
+
+	return merged
 }
