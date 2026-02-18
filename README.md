@@ -1,4 +1,4 @@
-# operator
+# phare-controller
 <img alt="logo" src="./assets/logo.png" width="420" height="420" />
 
 Kubernetes operator for reconciling `Phare` custom resources into workloads and supporting infrastructure.
@@ -37,10 +37,11 @@ make unit-test
 make run
 ```
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+### Running on a cluster
+1. Install CustomResourceDefinitions and sample resources:
 
 ```sh
+make install
 kubectl apply -f config/samples/
 ```
 
@@ -64,7 +65,7 @@ make uninstall
 ```
 
 ### Undeploy controller
-UnDeploy the controller from the cluster:
+Undeploy the controller from the cluster:
 
 ```sh
 make undeploy
@@ -91,26 +92,11 @@ This project aims to follow the Kubernetes [Operator pattern](https://kubernetes
 It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
 which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
 
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
 ### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
+If you are editing API definitions or kubebuilder markers, regenerate manifests and deep-copy code:
 
 ```sh
-make manifests
+make manifests generate
 ```
 
 **NOTE:** Run `make --help` for more information on all potential `make` targets
