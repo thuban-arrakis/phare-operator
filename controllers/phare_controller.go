@@ -99,10 +99,12 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	// Update status after successful reconciliation
-	phare.Status.Phase = PharePhaseActive
-	phare.Status.Message = "Successfully reconciled Phare resource"
-	if err := r.Status().Update(ctx, &phare); err != nil {
-		return ctrl.Result{}, err
+	if phare.Status.Phase != PharePhaseActive || phare.Status.Message != "Successfully reconciled Phare resource" {
+		phare.Status.Phase = PharePhaseActive
+		phare.Status.Message = "Successfully reconciled Phare resource"
+		if err := r.Status().Update(ctx, &phare); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	return ctrl.Result{}, nil
 }

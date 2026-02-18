@@ -84,7 +84,7 @@ func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.Co
 			Namespace: phare.Namespace,
 			Labels:    metadataLabels,
 		},
-		Data: phare.Spec.ToolChain.Config,
+		Data: copyStringMap(phare.Spec.ToolChain.Config),
 	}
 
 	// Go-templates support
@@ -117,6 +117,17 @@ func isDataEqual(map1, map2 map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // Utility function to hash the data of a ConfigMap

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,13 +13,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	tpl "github.com/localcorp/phare-controller/pkg/go-templates"
 )
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev1beta1.Phare) error {
 	desiredStatefulSet := r.newStatefulSet(&phare)
+	if desiredStatefulSet == nil {
+		return fmt.Errorf("failed to build desired StatefulSet for %s/%s", phare.Namespace, phare.Name)
+	}
 	existingStatefulSet := &appsv1.StatefulSet{}
 	err := r.Get(ctx, client.ObjectKey{Name: desiredStatefulSet.Name, Namespace: phare.Namespace}, existingStatefulSet)
 
@@ -30,19 +33,12 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 		originalStatefulSet := existingStatefulSet.DeepCopy()
 		r.mergeStatefulSets(desiredStatefulSet, existingStatefulSet)
 
-		// Define the ignored fields for containers, probes, etc.
-		var IgnoreContainerFields = cmp.Options{
-			cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
-			cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
-			cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
-		}
-
-		diff := cmp.Diff(originalStatefulSet, existingStatefulSet, IgnoreContainerFields)
+		diff := cmp.Diff(originalStatefulSet, existingStatefulSet, podTemplateCompareOptions())
 		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
 			patch := client.MergeFrom(originalStatefulSet)
 			if patchErr := r.Patch(ctx, existingStatefulSet, patch); patchErr != nil {
-				println("Error patching StatefulSet: ", patchErr)
+				r.Log.Error(patchErr, "Error patching StatefulSet", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
 				return patchErr
 			}
 			r.Log.Info("StatefulSet patched successfully", "StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
@@ -57,12 +53,16 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 }
 
 func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStatefulSet *appsv1.StatefulSet) {
+	spec := &existingStatefulSet.Spec.Template.Spec
+	desired := &desiredStatefulSet.Spec.Template.Spec
 
-	existingStatefulSet.Spec.Template.Spec.Containers = desiredStatefulSet.Spec.Template.Spec.Containers
-	existingStatefulSet.Spec.Template.Spec.InitContainers = desiredStatefulSet.Spec.Template.Spec.InitContainers
-	existingStatefulSet.Spec.Template.Spec.Affinity = desiredStatefulSet.Spec.Template.Spec.Affinity
-	existingStatefulSet.Spec.Template.Spec.Tolerations = desiredStatefulSet.Spec.Template.Spec.Tolerations
-	existingStatefulSet.Spec.Template.Spec.Volumes = desiredStatefulSet.Spec.Template.Spec.Volumes
+	spec.Containers = mergeContainersPreservingUnknown(spec.Containers, desired.Containers)
+	spec.InitContainers = mergeContainersPreservingUnknown(spec.InitContainers, desired.InitContainers)
+	spec.Volumes = mergeVolumesPreservingUnknown(spec.Volumes, desired.Volumes)
+	spec.Tolerations = mergeTolerationsPreservingUnknown(spec.Tolerations, desired.Tolerations)
+	if desired.Affinity != nil {
+		spec.Affinity = desired.Affinity
+	}
 	existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
 
 }
@@ -123,6 +123,7 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 							Resources:      phare.Spec.MicroService.ResourceRequirements,
 							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
 							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+							StartupProbe:   phare.Spec.MicroService.StartupProbe,
 						},
 					},
 					InitContainers: phare.Spec.MicroService.InitContainers,

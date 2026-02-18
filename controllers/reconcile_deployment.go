@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,12 +13,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
 func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1beta1.Phare) error {
 	desiredDeployment := r.newDeployment(&phare)
+	if desiredDeployment == nil {
+		return fmt.Errorf("failed to build desired Deployment for %s/%s", phare.Namespace, phare.Name)
+	}
 	existingDeployment := &appsv1.Deployment{}
 	err := r.Get(ctx, client.ObjectKey{Name: desiredDeployment.Name, Namespace: phare.Namespace}, existingDeployment)
 
@@ -32,20 +35,14 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 		// Modify the existingDeployment in memory
 		r.mergeDeployments(desiredDeployment, existingDeployment)
 
-		var IgnoreContainerFields = cmp.Options{
-			cmpopts.IgnoreFields(corev1.Container{}, "TerminationMessagePath", "TerminationMessagePolicy", "ImagePullPolicy"),
-			cmpopts.IgnoreFields(corev1.Probe{}, "TimeoutSeconds", "SuccessThreshold", "FailureThreshold", "PeriodSeconds"),
-			cmpopts.IgnoreFields(corev1.HTTPGetAction{}, "Scheme"),
-		}
-
 		// Use cmp.Diff to determine differences
-		diff := cmp.Diff(originalDeployment, existingDeployment, IgnoreContainerFields)
+		diff := cmp.Diff(originalDeployment, existingDeployment, podTemplateCompareOptions())
 		// println("Diff: ", diff) // TODO: remove this, it's just for debugging
 		if diff != "" {
 			// Calculate the patch using MergeFrom if differences are detected
 			patch := client.MergeFrom(originalDeployment)
 			if patchErr := r.Patch(ctx, existingDeployment, patch); patchErr != nil {
-				println("Error patching Deployment: ", patchErr)
+				r.Log.Error(patchErr, "Error patching Deployment", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
 				return patchErr
 			}
 			r.Log.Info("Deployment patched successfully", "Deployment.Namespace", existingDeployment.Namespace, "Deployment.Name", existingDeployment.Name)
@@ -66,12 +63,16 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // Anywaways, it works for now.
 // NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
+	spec := &existingDeployment.Spec.Template.Spec
+	desired := &desiredDeployment.Spec.Template.Spec
 
-	existingDeployment.Spec.Template.Spec.Containers = desiredDeployment.Spec.Template.Spec.Containers
-	existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
-	existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
-	existingDeployment.Spec.Template.Spec.Tolerations = desiredDeployment.Spec.Template.Spec.Tolerations
-	existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes
+	spec.Containers = mergeContainersPreservingUnknown(spec.Containers, desired.Containers)
+	spec.InitContainers = mergeContainersPreservingUnknown(spec.InitContainers, desired.InitContainers)
+	spec.Volumes = mergeVolumesPreservingUnknown(spec.Volumes, desired.Volumes)
+	spec.Tolerations = mergeTolerationsPreservingUnknown(spec.Tolerations, desired.Tolerations)
+	if desired.Affinity != nil {
+		spec.Affinity = desired.Affinity
+	}
 }
 
 func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {
@@ -129,6 +130,7 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 							Resources:      phare.Spec.MicroService.ResourceRequirements,
 							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
 							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+							StartupProbe:   phare.Spec.MicroService.StartupProbe,
 						},
 					},
 					InitContainers: phare.Spec.MicroService.InitContainers,
