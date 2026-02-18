@@ -53,12 +53,16 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 }
 
 func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStatefulSet *appsv1.StatefulSet) {
+	spec := &existingStatefulSet.Spec.Template.Spec
+	desired := &desiredStatefulSet.Spec.Template.Spec
 
-	existingStatefulSet.Spec.Template.Spec.Containers = desiredStatefulSet.Spec.Template.Spec.Containers
-	existingStatefulSet.Spec.Template.Spec.InitContainers = desiredStatefulSet.Spec.Template.Spec.InitContainers
-	existingStatefulSet.Spec.Template.Spec.Affinity = desiredStatefulSet.Spec.Template.Spec.Affinity
-	existingStatefulSet.Spec.Template.Spec.Tolerations = desiredStatefulSet.Spec.Template.Spec.Tolerations
-	existingStatefulSet.Spec.Template.Spec.Volumes = desiredStatefulSet.Spec.Template.Spec.Volumes
+	spec.Containers = mergeContainersPreservingUnknown(spec.Containers, desired.Containers)
+	spec.InitContainers = mergeContainersPreservingUnknown(spec.InitContainers, desired.InitContainers)
+	spec.Volumes = mergeVolumesPreservingUnknown(spec.Volumes, desired.Volumes)
+	spec.Tolerations = mergeTolerationsPreservingUnknown(spec.Tolerations, desired.Tolerations)
+	if desired.Affinity != nil {
+		spec.Affinity = desired.Affinity
+	}
 	existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
 
 }

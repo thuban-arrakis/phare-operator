@@ -129,6 +129,63 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	}
 }
 
+func TestReconcileDeploymentPreservesMutatedFields(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Spec.MicroService.Env = []corev1.EnvVar{{Name: "APP_MODE", Value: "prod"}}
+
+	builder := &PhareReconciler{Scheme: scheme}
+	existing := builder.newDeployment(phare)
+	if existing == nil {
+		t.Fatalf("expected base deployment")
+	}
+
+	// Simulate webhook/controller mutations that should be preserved.
+	existing.Spec.Template.Spec.Containers = append(existing.Spec.Template.Spec.Containers, corev1.Container{
+		Name:  "istio-proxy",
+		Image: "proxyv2:latest",
+	})
+	existing.Spec.Template.Spec.Containers[0].Env = append(existing.Spec.Template.Spec.Containers[0].Env,
+		corev1.EnvVar{Name: "INJECTED", Value: "true"},
+	)
+	existing.Spec.Template.Spec.Volumes = append(existing.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: "injected-volume",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+	existing.Status.AvailableReplicas = 1
+	existing.ManagedFields = append(existing.ManagedFields, metav1.ManagedFieldsEntry{
+		Manager:   "istio-sidecar-injector",
+		Operation: metav1.ManagedFieldsOperationUpdate,
+	})
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile deployment preserve mutations: %v", err)
+	}
+
+	current := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get deployment after reconcile: %v", err)
+	}
+
+	if !containerExists(current.Spec.Template.Spec.Containers, "istio-proxy") {
+		t.Fatalf("expected injected sidecar to be preserved")
+	}
+	if !envVarExists(current.Spec.Template.Spec.Containers[0].Env, "INJECTED") {
+		t.Fatalf("expected injected env var to be preserved")
+	}
+	if !volumeExists(current.Spec.Template.Spec.Volumes, "injected-volume") {
+		t.Fatalf("expected injected volume to be preserved")
+	}
+	if !envVarExists(current.Spec.Template.Spec.Containers[0].Env, "APP_MODE") {
+		t.Fatalf("expected desired env var to remain present")
+	}
+}
+
 func newTestReconciler(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) *PhareReconciler {
 	t.Helper()
 	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&pharev1beta1.Phare{})
@@ -192,4 +249,31 @@ func basePhare(name, namespace string) *pharev1beta1.Phare {
 
 func intstrFromInt(v int) intstr.IntOrString {
 	return intstr.FromInt(v)
+}
+
+func containerExists(items []corev1.Container, name string) bool {
+	for _, item := range items {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func envVarExists(items []corev1.EnvVar, name string) bool {
+	for _, item := range items {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func volumeExists(items []corev1.Volume, name string) bool {
+	for _, item := range items {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
 }

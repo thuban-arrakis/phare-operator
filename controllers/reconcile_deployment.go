@@ -63,12 +63,16 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // Anywaways, it works for now.
 // NOTE: Now cmp.Diff is used to determine differences with `cmpopts.IgnoreFields`, so it must be some overhead.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
+	spec := &existingDeployment.Spec.Template.Spec
+	desired := &desiredDeployment.Spec.Template.Spec
 
-	existingDeployment.Spec.Template.Spec.Containers = desiredDeployment.Spec.Template.Spec.Containers
-	existingDeployment.Spec.Template.Spec.InitContainers = desiredDeployment.Spec.Template.Spec.InitContainers
-	existingDeployment.Spec.Template.Spec.Affinity = desiredDeployment.Spec.Template.Spec.Affinity
-	existingDeployment.Spec.Template.Spec.Tolerations = desiredDeployment.Spec.Template.Spec.Tolerations
-	existingDeployment.Spec.Template.Spec.Volumes = desiredDeployment.Spec.Template.Spec.Volumes
+	spec.Containers = mergeContainersPreservingUnknown(spec.Containers, desired.Containers)
+	spec.InitContainers = mergeContainersPreservingUnknown(spec.InitContainers, desired.InitContainers)
+	spec.Volumes = mergeVolumesPreservingUnknown(spec.Volumes, desired.Volumes)
+	spec.Tolerations = mergeTolerationsPreservingUnknown(spec.Tolerations, desired.Tolerations)
+	if desired.Affinity != nil {
+		spec.Affinity = desired.Affinity
+	}
 }
 
 func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {
