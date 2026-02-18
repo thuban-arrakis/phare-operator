@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,9 @@ import (
 
 func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev1beta1.Phare) error {
 	desiredStatefulSet := r.newStatefulSet(&phare)
+	if desiredStatefulSet == nil {
+		return fmt.Errorf("failed to build desired StatefulSet for %s/%s", phare.Namespace, phare.Name)
+	}
 	existingStatefulSet := &appsv1.StatefulSet{}
 	err := r.Get(ctx, client.ObjectKey{Name: desiredStatefulSet.Name, Namespace: phare.Namespace}, existingStatefulSet)
 

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
@@ -32,6 +33,9 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 	}
 
 	desiredService := r.desiredService(&phare)
+	if desiredService == nil {
+		return fmt.Errorf("failed to build desired Service for %s/%s", phare.Namespace, phare.Name)
+	}
 
 	// If the service doesn't exist in the cluster, create it
 	if errors.IsNotFound(err) {
