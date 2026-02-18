@@ -132,6 +132,53 @@ func TestReconcileServiceUpdatePreservesImmutableFields(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceMetadataIsAuthoritative(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Annotations = map[string]string{"desired": "true"}
+	phare.Labels = map[string]string{"team": "core"}
+	phare.Spec.Service = &corev1.ServiceSpec{
+		Type:  corev1.ServiceTypeClusterIP,
+		Ports: []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstrFromInt(80)}},
+	}
+
+	existing := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        phare.Name,
+			Namespace:   phare.Namespace,
+			Annotations: map[string]string{"stale": "yes"},
+			Labels:      map[string]string{"app": "demo", "stale": "yes"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.10",
+			Selector:  map[string]string{"app": "demo"},
+			Ports:     []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstrFromInt(80)}},
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile service metadata authoritative: %v", err)
+	}
+
+	current := &corev1.Service{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get service after reconcile: %v", err)
+	}
+	if _, ok := current.Annotations["stale"]; ok {
+		t.Fatalf("expected stale annotation to be removed, got %#v", current.Annotations)
+	}
+	if current.Annotations["desired"] != "true" {
+		t.Fatalf("expected desired annotation to be applied, got %#v", current.Annotations)
+	}
+	if _, ok := current.Labels["stale"]; ok {
+		t.Fatalf("expected stale label to be removed, got %#v", current.Labels)
+	}
+}
+
 func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	scheme := testScheme(t)
 	phare := basePhare("demo", "default")
@@ -175,6 +222,80 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	err = r.Get(context.Background(), client.ObjectKey{Name: phare.Name, Namespace: phare.Namespace}, health)
 	if err == nil || !errors.IsNotFound(err) {
 		t.Fatalf("expected HealthCheckPolicy to be deleted, got err=%v", err)
+	}
+}
+
+func TestReconcileGCPBackendPolicyRemovesStaleSpecFields(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		GCPBackendPolicy: &pharev1beta1.GCPBackendPolicySpec{
+			Default: pharev1beta1.GCPBackendPolicyDefaultSpec{
+				TimeoutSec: 60,
+			},
+			TargetRef: pharev1beta1.GCPBackendPolicyTargetRefSpec{
+				Group: "",
+				Kind:  "Service",
+				Name:  "demo",
+			},
+		},
+	}
+
+	gcp := &unstructured.Unstructured{}
+	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	gcp.SetName(phare.Name)
+	gcp.SetNamespace(phare.Namespace)
+	gcp.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: pharev1beta1.GroupVersion.String(),
+		Kind:       "Phare",
+		Name:       phare.Name,
+		UID:        phare.UID,
+	}})
+	gcp.SetLabels(map[string]string{"stale": "label"})
+	gcp.Object["spec"] = map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": 60,
+			"logging": map[string]interface{}{
+				"enabled":    true,
+				"sampleRate": 100,
+			},
+		},
+		"targetRef": map[string]interface{}{
+			"group": "",
+			"kind":  "Service",
+			"name":  "demo",
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, gcp)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile gcp backend policy strict compare: %v", err)
+	}
+
+	current := &unstructured.Unstructured{}
+	current.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get gcp backend policy after reconcile: %v", err)
+	}
+	spec, ok := current.Object["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object spec map, got %#v", current.Object["spec"])
+	}
+	def, ok := spec["default"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected default spec map, got %#v", spec["default"])
+	}
+	logging, ok := def["logging"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected logging field to be present with zero values, got %#v", def["logging"])
+	}
+	if logging["enabled"] != false || logging["sampleRate"] != int64(0) {
+		t.Fatalf("expected stale logging values to be reset, got %#v", logging)
+	}
+	if current.GetLabels()["stale"] != "" {
+		t.Fatalf("expected stale labels to be removed, got %#v", current.GetLabels())
 	}
 }
 

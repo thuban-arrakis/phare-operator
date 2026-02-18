@@ -47,11 +47,13 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 		return err
 	}
 
-	// If the service exists but there's a difference in spec, update it
-	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) {
+	// If service spec or controller-managed metadata drifts, update it.
+	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
+		!reflect.DeepEqual(existingService.Labels, desiredService.Labels) ||
+		!reflect.DeepEqual(existingService.Annotations, desiredService.Annotations) {
 		existingService.Spec = mergeServiceSpecPreservingImmutable(existingService.Spec, desiredService.Spec)
-		existingService.Labels = mergeStringMaps(existingService.Labels, desiredService.Labels)
-		existingService.Annotations = mergeStringMaps(existingService.Annotations, desiredService.Annotations)
+		existingService.Labels = copyStringMap(desiredService.Labels)
+		existingService.Annotations = copyStringMap(desiredService.Annotations)
 		return r.updateService(ctx, existingService)
 	}
 

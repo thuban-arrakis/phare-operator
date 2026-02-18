@@ -2,6 +2,7 @@ package yamldiff
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 
 	"github.com/goccy/go-yaml"
@@ -256,7 +257,7 @@ func (r *runner) handleArray(rawA rawType, rawB rawType, level int) *diff {
 			break
 		}
 
-		smallestDiff := &diff{diffCount: 100000} // FIXME
+		smallestDiff := &diff{diffCount: math.MaxInt}
 		smallestKeyA := 0
 		smallestKeyB := 0
 

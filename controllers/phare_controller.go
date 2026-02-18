@@ -22,7 +22,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -123,6 +125,18 @@ func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Reque
 
 func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	labelFilter := defaultLabelPredicate("app.kubernetes.io/created-by", "phare-controller")
+	gcpBackendPolicy := &unstructured.Unstructured{}
+	gcpBackendPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.gke.io",
+		Version: "v1",
+		Kind:    "GCPBackendPolicy",
+	})
+	healthCheckPolicy := &unstructured.Unstructured{}
+	healthCheckPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.gke.io",
+		Version: "v1",
+		Kind:    "HealthCheckPolicy",
+	})
 
 	statefulSetPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -143,6 +157,8 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}, builder.WithPredicates(labelFilter)).
 		Owns(&corev1.ConfigMap{}, builder.WithPredicates(labelFilter)).
 		Owns(&gatewayv1beta1.HTTPRoute{}, builder.WithPredicates(labelFilter)).
+		Owns(gcpBackendPolicy).
+		Owns(healthCheckPolicy).
 		Complete(r)
 }
 
