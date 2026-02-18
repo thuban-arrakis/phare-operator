@@ -68,11 +68,9 @@ func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment
 
 	spec.Containers = mergeContainersPreservingUnknown(spec.Containers, desired.Containers)
 	spec.InitContainers = mergeContainersPreservingUnknown(spec.InitContainers, desired.InitContainers)
-	spec.Volumes = mergeVolumesPreservingUnknown(spec.Volumes, desired.Volumes)
-	spec.Tolerations = mergeTolerationsPreservingUnknown(spec.Tolerations, desired.Tolerations)
-	if desired.Affinity != nil {
-		spec.Affinity = desired.Affinity
-	}
+	spec.Volumes = mergeVolumesRespectingMountedNames(spec.Volumes, desired.Volumes, spec.Containers, spec.InitContainers)
+	spec.Tolerations = desired.Tolerations
+	spec.Affinity = desired.Affinity
 }
 
 func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deployment {

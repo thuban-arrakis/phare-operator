@@ -140,14 +140,15 @@ func TestReconcileDeploymentPreservesMutatedFields(t *testing.T) {
 		t.Fatalf("expected base deployment")
 	}
 
-	// Simulate webhook/controller mutations that should be preserved.
+	// Simulate webhook/controller sidecar mutation that should be preserved.
 	existing.Spec.Template.Spec.Containers = append(existing.Spec.Template.Spec.Containers, corev1.Container{
 		Name:  "istio-proxy",
 		Image: "proxyv2:latest",
+		VolumeMounts: []corev1.VolumeMount{{
+			Name:      "injected-volume",
+			MountPath: "/var/run/istio",
+		}},
 	})
-	existing.Spec.Template.Spec.Containers[0].Env = append(existing.Spec.Template.Spec.Containers[0].Env,
-		corev1.EnvVar{Name: "INJECTED", Value: "true"},
-	)
 	existing.Spec.Template.Spec.Volumes = append(existing.Spec.Template.Spec.Volumes, corev1.Volume{
 		Name: "injected-volume",
 		VolumeSource: corev1.VolumeSource{
@@ -175,14 +176,63 @@ func TestReconcileDeploymentPreservesMutatedFields(t *testing.T) {
 	if !containerExists(current.Spec.Template.Spec.Containers, "istio-proxy") {
 		t.Fatalf("expected injected sidecar to be preserved")
 	}
-	if !envVarExists(current.Spec.Template.Spec.Containers[0].Env, "INJECTED") {
-		t.Fatalf("expected injected env var to be preserved")
-	}
 	if !volumeExists(current.Spec.Template.Spec.Volumes, "injected-volume") {
 		t.Fatalf("expected injected volume to be preserved")
 	}
 	if !envVarExists(current.Spec.Template.Spec.Containers[0].Env, "APP_MODE") {
 		t.Fatalf("expected desired env var to remain present")
+	}
+}
+
+func TestReconcileDeploymentRemovesStaleManagedFields(t *testing.T) {
+	scheme := testScheme(t)
+
+	old := basePhare("demo", "default")
+	old.Spec.MicroService.Env = []corev1.EnvVar{
+		{Name: "KEEP", Value: "1"},
+		{Name: "REMOVE", Value: "1"},
+	}
+	old.Spec.MicroService.Affinity = &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+					MatchExpressions: []corev1.NodeSelectorRequirement{{
+						Key:      "kubernetes.io/os",
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"linux"},
+					}},
+				}},
+			},
+		},
+	}
+
+	builder := &PhareReconciler{Scheme: scheme}
+	existing := builder.newDeployment(old)
+	if existing == nil {
+		t.Fatalf("expected existing deployment")
+	}
+
+	updated := old.DeepCopy()
+	updated.Spec.MicroService.Env = []corev1.EnvVar{
+		{Name: "KEEP", Value: "1"},
+	}
+	updated.Spec.MicroService.Affinity = nil
+
+	r := newTestReconciler(t, scheme, updated, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: updated.Name, Namespace: updated.Namespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile stale field removal: %v", err)
+	}
+
+	current := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get deployment after reconcile: %v", err)
+	}
+	if envVarExists(current.Spec.Template.Spec.Containers[0].Env, "REMOVE") {
+		t.Fatalf("expected stale env var to be removed")
+	}
+	if current.Spec.Template.Spec.Affinity != nil {
+		t.Fatalf("expected affinity to be cleared when removed from spec")
 	}
 }
 

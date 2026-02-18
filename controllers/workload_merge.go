@@ -47,10 +47,11 @@ func mergeContainerPreservingMutations(existing, desired corev1.Container) corev
 	merged.ReadinessProbe = desired.ReadinessProbe
 	merged.StartupProbe = desired.StartupProbe
 
-	merged.Env = mergeEnvPreservingUnknown(existing.Env, desired.Env)
-	merged.EnvFrom = mergeEnvFromPreservingUnknown(existing.EnvFrom, desired.EnvFrom)
-	merged.VolumeMounts = mergeVolumeMountsPreservingUnknown(existing.VolumeMounts, desired.VolumeMounts)
-	merged.Ports = mergePortsPreservingUnknown(existing.Ports, desired.Ports)
+	// For controller-managed containers, desired spec is authoritative.
+	merged.Env = desired.Env
+	merged.EnvFrom = desired.EnvFrom
+	merged.VolumeMounts = desired.VolumeMounts
+	merged.Ports = desired.Ports
 
 	return merged
 }
@@ -151,6 +152,37 @@ func mergeVolumesPreservingUnknown(existing, desired []corev1.Volume) []corev1.V
 	return out
 }
 
+func mergeVolumesRespectingMountedNames(existing, desired []corev1.Volume, containers, initContainers []corev1.Container) []corev1.Volume {
+	desiredByName := make(map[string]corev1.Volume, len(desired))
+	for _, v := range desired {
+		desiredByName[v.Name] = v
+	}
+
+	mounted := mountedVolumeNames(containers, initContainers)
+	out := make([]corev1.Volume, 0, len(existing)+len(desired))
+	seen := make(map[string]struct{}, len(desired))
+
+	for _, v := range existing {
+		if want, ok := desiredByName[v.Name]; ok {
+			out = append(out, want)
+			seen[v.Name] = struct{}{}
+			continue
+		}
+		// Preserve unknown volumes still used by preserved/injected containers.
+		if _, inUse := mounted[v.Name]; inUse {
+			out = append(out, v)
+		}
+	}
+
+	for _, v := range desired {
+		if _, ok := seen[v.Name]; ok {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 func mergeTolerationsPreservingUnknown(existing, desired []corev1.Toleration) []corev1.Toleration {
 	out := make([]corev1.Toleration, 0, len(existing)+len(desired))
 	out = append(out, desired...)
@@ -179,6 +211,20 @@ func volumeMountKey(v corev1.VolumeMount) string {
 
 func containerPortKey(p corev1.ContainerPort) string {
 	return fmt.Sprintf("%s|%s|%d", p.Name, p.Protocol, p.ContainerPort)
+}
+
+func mountedVolumeNames(containers, initContainers []corev1.Container) map[string]struct{} {
+	names := make(map[string]struct{})
+	add := func(items []corev1.Container) {
+		for _, c := range items {
+			for _, m := range c.VolumeMounts {
+				names[m.Name] = struct{}{}
+			}
+		}
+	}
+	add(containers)
+	add(initContainers)
+	return names
 }
 
 func tolerationEqual(a, b corev1.Toleration) bool {
