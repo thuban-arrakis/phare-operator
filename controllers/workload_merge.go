@@ -220,6 +220,9 @@ func mountedVolumeNames(containers, initContainers []corev1.Container) map[strin
 			for _, m := range c.VolumeMounts {
 				names[m.Name] = struct{}{}
 			}
+			for _, d := range c.VolumeDevices {
+				names[d.Name] = struct{}{}
+			}
 		}
 	}
 	add(containers)
