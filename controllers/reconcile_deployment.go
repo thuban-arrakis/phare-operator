@@ -59,8 +59,8 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 // and related volumes that are still in use.
 func (r *PhareReconciler) mergeDeployments(desiredDeployment, existingDeployment *appsv1.Deployment) {
 	existingDeployment.Spec.Replicas = desiredDeployment.Spec.Replicas
-	existingDeployment.Spec.Template.Labels = copyStringMap(desiredDeployment.Spec.Template.Labels)
-	existingDeployment.Spec.Template.Annotations = copyStringMap(desiredDeployment.Spec.Template.Annotations)
+	existingDeployment.Spec.Template.Labels = copyStringMapPreserveNil(desiredDeployment.Spec.Template.Labels)
+	existingDeployment.Spec.Template.Annotations = copyStringMapPreserveNil(desiredDeployment.Spec.Template.Annotations)
 
 	spec := &existingDeployment.Spec.Template.Spec
 	desired := &desiredDeployment.Spec.Template.Spec
