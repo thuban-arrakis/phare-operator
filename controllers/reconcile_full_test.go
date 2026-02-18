@@ -83,6 +83,147 @@ func TestReconcileServiceCreateUpdateDelete(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceUpdatePreservesImmutableFields(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Spec.Service = &corev1.ServiceSpec{
+		Type:  corev1.ServiceTypeNodePort,
+		Ports: []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstrFromInt(8080)}},
+	}
+
+	existing := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      phare.Name,
+			Namespace: phare.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:              corev1.ServiceTypeNodePort,
+			ClusterIP:         "10.0.0.10",
+			ClusterIPs:        []string{"10.0.0.10"},
+			IPFamilies:        []corev1.IPFamily{corev1.IPv4Protocol},
+			LoadBalancerClass: ptrTo("internal-lb"),
+			Selector:          map[string]string{"app": "demo"},
+			Ports:             []corev1.ServicePort{{Name: "http", Port: 80, NodePort: 30080, TargetPort: intstrFromInt(80)}},
+			ExternalIPs:       []string{"1.2.3.4"},
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile service immutable preservation: %v", err)
+	}
+
+	current := &corev1.Service{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get service after reconcile: %v", err)
+	}
+	if current.Spec.ClusterIP != "10.0.0.10" {
+		t.Fatalf("expected clusterIP to be preserved, got %q", current.Spec.ClusterIP)
+	}
+	if len(current.Spec.ClusterIPs) != 1 || current.Spec.ClusterIPs[0] != "10.0.0.10" {
+		t.Fatalf("expected clusterIPs to be preserved, got %#v", current.Spec.ClusterIPs)
+	}
+	if len(current.Spec.Ports) != 1 || current.Spec.Ports[0].Port != 8080 {
+		t.Fatalf("expected service port updated to 8080, got %#v", current.Spec.Ports)
+	}
+	if current.Spec.Ports[0].NodePort != 30080 {
+		t.Fatalf("expected allocated nodePort to be preserved, got %d", current.Spec.Ports[0].NodePort)
+	}
+	if current.Spec.LoadBalancerClass == nil || *current.Spec.LoadBalancerClass != "internal-lb" {
+		t.Fatalf("expected loadBalancerClass to be preserved, got %#v", current.Spec.LoadBalancerClass)
+	}
+}
+
+func TestReconcileServiceCanReallocateNodePortViaAnnotation(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Annotations = map[string]string{reallocateNodePortAnnotation: "true"}
+	phare.Spec.Service = &corev1.ServiceSpec{
+		Type:  corev1.ServiceTypeNodePort,
+		Ports: []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstrFromInt(8080)}},
+	}
+
+	existing := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      phare.Name,
+			Namespace: phare.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeNodePort,
+			ClusterIP: "10.0.0.10",
+			Selector:  map[string]string{"app": "demo"},
+			Ports:     []corev1.ServicePort{{Name: "http", Port: 80, NodePort: 30080, TargetPort: intstrFromInt(80)}},
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile service nodeport reallocate: %v", err)
+	}
+
+	current := &corev1.Service{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get service after reconcile: %v", err)
+	}
+	if len(current.Spec.Ports) != 1 {
+		t.Fatalf("expected one service port, got %#v", current.Spec.Ports)
+	}
+	if current.Spec.Ports[0].NodePort != 0 {
+		t.Fatalf("expected nodePort to be left unset for reallocation, got %d", current.Spec.Ports[0].NodePort)
+	}
+}
+
+func TestReconcileServiceMetadataIsAuthoritative(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Annotations = map[string]string{"desired": "true"}
+	phare.Labels = map[string]string{"team": "core"}
+	phare.Spec.Service = &corev1.ServiceSpec{
+		Type:  corev1.ServiceTypeClusterIP,
+		Ports: []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstrFromInt(80)}},
+	}
+
+	existing := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        phare.Name,
+			Namespace:   phare.Namespace,
+			Annotations: map[string]string{"stale": "yes"},
+			Labels:      map[string]string{"app": "demo", "stale": "yes"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeClusterIP,
+			ClusterIP: "10.0.0.10",
+			Selector:  map[string]string{"app": "demo"},
+			Ports:     []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstrFromInt(80)}},
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile service metadata authoritative: %v", err)
+	}
+
+	current := &corev1.Service{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get service after reconcile: %v", err)
+	}
+	if _, ok := current.Annotations["stale"]; ok {
+		t.Fatalf("expected stale annotation to be removed, got %#v", current.Annotations)
+	}
+	if current.Annotations["desired"] != "true" {
+		t.Fatalf("expected desired annotation to be applied, got %#v", current.Annotations)
+	}
+	if _, ok := current.Labels["stale"]; ok {
+		t.Fatalf("expected stale label to be removed, got %#v", current.Labels)
+	}
+}
+
 func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	scheme := testScheme(t)
 	phare := basePhare("demo", "default")
@@ -126,6 +267,80 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	err = r.Get(context.Background(), client.ObjectKey{Name: phare.Name, Namespace: phare.Namespace}, health)
 	if err == nil || !errors.IsNotFound(err) {
 		t.Fatalf("expected HealthCheckPolicy to be deleted, got err=%v", err)
+	}
+}
+
+func TestReconcileGCPBackendPolicyRemovesStaleSpecFields(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		GCPBackendPolicy: &pharev1beta1.GCPBackendPolicySpec{
+			Default: pharev1beta1.GCPBackendPolicyDefaultSpec{
+				TimeoutSec: 60,
+			},
+			TargetRef: pharev1beta1.GCPBackendPolicyTargetRefSpec{
+				Group: "",
+				Kind:  "Service",
+				Name:  "demo",
+			},
+		},
+	}
+
+	gcp := &unstructured.Unstructured{}
+	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	gcp.SetName(phare.Name)
+	gcp.SetNamespace(phare.Namespace)
+	gcp.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: pharev1beta1.GroupVersion.String(),
+		Kind:       "Phare",
+		Name:       phare.Name,
+		UID:        phare.UID,
+	}})
+	gcp.SetLabels(map[string]string{"stale": "label"})
+	gcp.Object["spec"] = map[string]interface{}{
+		"default": map[string]interface{}{
+			"timeoutSec": 60,
+			"logging": map[string]interface{}{
+				"enabled":    true,
+				"sampleRate": 100,
+			},
+		},
+		"targetRef": map[string]interface{}{
+			"group": "",
+			"kind":  "Service",
+			"name":  "demo",
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, gcp)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile gcp backend policy strict compare: %v", err)
+	}
+
+	current := &unstructured.Unstructured{}
+	current.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get gcp backend policy after reconcile: %v", err)
+	}
+	spec, ok := current.Object["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected object spec map, got %#v", current.Object["spec"])
+	}
+	def, ok := spec["default"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected default spec map, got %#v", spec["default"])
+	}
+	logging, ok := def["logging"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected logging field to be present with zero values, got %#v", def["logging"])
+	}
+	if logging["enabled"] != false || logging["sampleRate"] != int64(0) {
+		t.Fatalf("expected stale logging values to be reset, got %#v", logging)
+	}
+	if current.GetLabels()["stale"] != "" {
+		t.Fatalf("expected stale labels to be removed, got %#v", current.GetLabels())
 	}
 }
 
@@ -236,6 +451,65 @@ func TestReconcileDeploymentRemovesStaleManagedFields(t *testing.T) {
 	}
 }
 
+func TestReconcileDeploymentUpdatesReplicas(t *testing.T) {
+	scheme := testScheme(t)
+	old := basePhare("demo", "default")
+	old.Spec.MicroService.ReplicaCount = 1
+
+	builder := &PhareReconciler{Scheme: scheme}
+	existing := builder.newDeployment(old)
+	if existing == nil {
+		t.Fatalf("expected existing deployment")
+	}
+
+	updated := old.DeepCopy()
+	updated.Spec.MicroService.ReplicaCount = 3
+
+	r := newTestReconciler(t, scheme, updated, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: updated.Name, Namespace: updated.Namespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile deployment replicas: %v", err)
+	}
+
+	current := &appsv1.Deployment{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get deployment after reconcile: %v", err)
+	}
+	if current.Spec.Replicas == nil || *current.Spec.Replicas != 3 {
+		t.Fatalf("expected replicas=3, got %#v", current.Spec.Replicas)
+	}
+}
+
+func TestReconcileStatefulSetUpdatesReplicas(t *testing.T) {
+	scheme := testScheme(t)
+	old := basePhare("demo", "default")
+	old.Spec.MicroService.Kind = "StatefulSet"
+	old.Spec.MicroService.ReplicaCount = 1
+
+	builder := &PhareReconciler{Scheme: scheme}
+	existing := builder.newStatefulSet(old)
+	if existing == nil {
+		t.Fatalf("expected existing statefulset")
+	}
+
+	updated := old.DeepCopy()
+	updated.Spec.MicroService.ReplicaCount = 4
+
+	r := newTestReconciler(t, scheme, updated, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: updated.Name, Namespace: updated.Namespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile statefulset replicas: %v", err)
+	}
+
+	current := &appsv1.StatefulSet{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get statefulset after reconcile: %v", err)
+	}
+	if current.Spec.Replicas == nil || *current.Spec.Replicas != 4 {
+		t.Fatalf("expected replicas=4, got %#v", current.Spec.Replicas)
+	}
+}
+
 func newTestReconciler(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) *PhareReconciler {
 	t.Helper()
 	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&pharev1beta1.Phare{})
@@ -299,6 +573,10 @@ func basePhare(name, namespace string) *pharev1beta1.Phare {
 
 func intstrFromInt(v int) intstr.IntOrString {
 	return intstr.FromInt(v)
+}
+
+func ptrTo(s string) *string {
+	return &s
 }
 
 func containerExists(items []corev1.Container, name string) bool {

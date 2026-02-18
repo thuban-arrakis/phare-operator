@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +13,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// Also untested, check it later.
+const reallocateNodePortAnnotation = "phare.localcorp.internal/reallocate-nodeport"
+
+// reconcileService creates, updates, or deletes the Service for a Phare resource.
 func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingService := &corev1.Service{}
 	err := r.Get(ctx, req.NamespacedName, existingService)
@@ -47,10 +50,18 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 		return err
 	}
 
-	// If the service exists but there's a difference in spec, update it
-	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) {
-		desiredService.ResourceVersion = existingService.ResourceVersion // preserve the ResourceVersion
-		return r.updateService(ctx, desiredService)
+	// Update when spec or controller-managed metadata changed.
+	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
+		!stringMapsEqualNilEmpty(existingService.Labels, desiredService.Labels) ||
+		!stringMapsEqualNilEmpty(existingService.Annotations, desiredService.Annotations) {
+		existingService.Spec = mergeServiceSpecPreservingImmutable(
+			existingService.Spec,
+			desiredService.Spec,
+			!shouldReallocateNodePorts(&phare),
+		)
+		existingService.Labels = copyStringMapPreserveNil(desiredService.Labels)
+		existingService.Annotations = copyStringMapPreserveNil(desiredService.Annotations)
+		return r.updateService(ctx, existingService)
 	}
 
 	return nil
@@ -74,7 +85,7 @@ func (r *PhareReconciler) updateService(ctx context.Context, service *corev1.Ser
 
 func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Service {
 
-	// Keep the same labels at the metadata level
+	// Base labels for resources created by this controller.
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
@@ -89,8 +100,8 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        phare.Name,
 			Namespace:   phare.Namespace,
-			Annotations: phare.Annotations,
-			Labels:      mergeStringMaps(metadataLabels, phare.Labels), // Note: This will override your static metadataLabels if the same keys are used in phare.Spec.Service.Labels
+			Annotations: copyStringMapPreserveNil(phare.Annotations),
+			Labels:      mergeStringMaps(metadataLabels, phare.Labels),
 		},
 		Spec: *phare.Spec.Service,
 	}
@@ -117,9 +128,7 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 	return service
 }
 
-// If you want to compare the ServiceSpec fields, you can use this function
-// to check if the existing and desired ServiceSpecs differ.
-// Func returns true if the ServiceSpecs differ, false otherwise.
+// serviceSpecsDiffer compares fields this controller manages in ServiceSpec.
 func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	if !reflect.DeepEqual(existing.Ports, desired.Ports) {
 		return true
@@ -133,7 +142,56 @@ func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 		return true
 	}
 
-	// Add comparisons for other fields you care about
-
 	return false
+}
+
+func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec, preserveNodePort bool) corev1.ServiceSpec {
+	merged := *desired.DeepCopy()
+
+	merged.ClusterIP = existing.ClusterIP
+	merged.ClusterIPs = append([]string(nil), existing.ClusterIPs...)
+	merged.IPFamilies = append([]corev1.IPFamily(nil), existing.IPFamilies...)
+	merged.IPFamilyPolicy = existing.IPFamilyPolicy
+	merged.HealthCheckNodePort = existing.HealthCheckNodePort
+	merged.LoadBalancerClass = existing.LoadBalancerClass
+
+	if preserveNodePort && len(existing.Ports) > 0 {
+		existingByKey := make(map[string]corev1.ServicePort, len(existing.Ports))
+		for _, p := range existing.Ports {
+			// Port identity prefers name; fallback is protocol/port.
+			// Renaming a port (named<->unnamed) changes this identity and may not preserve NodePort.
+			key := p.Name
+			if key == "" {
+				key = fmt.Sprintf("%s/%d", p.Protocol, p.Port)
+			}
+			existingByKey[key] = p
+		}
+		for i := range merged.Ports {
+			key := merged.Ports[i].Name
+			if key == "" {
+				key = fmt.Sprintf("%s/%d", merged.Ports[i].Protocol, merged.Ports[i].Port)
+			}
+			if current, ok := existingByKey[key]; ok && merged.Ports[i].NodePort == 0 {
+				merged.Ports[i].NodePort = current.NodePort
+			}
+		}
+	}
+
+	return merged
+}
+
+func shouldReallocateNodePorts(phare *pharev1beta1.Phare) bool {
+	if phare == nil {
+		return false
+	}
+	v, ok := phare.Annotations[reallocateNodePortAnnotation]
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

@@ -22,7 +22,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -30,9 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
-
-	// TODO(user): Event recorder is required to emit Events.
-	// "k8s.io/client-go/tools/record"
 
 	"github.com/go-logr/logr"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
@@ -53,22 +52,17 @@ type PhareReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.gke.io,resources=gcpbackendpolicies,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.gke.io,resources=healthcheckpolicies,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Phare object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.1/pkg/reconcile
+// Reconcile moves cluster resources toward the desired Phare spec.
 func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var phare pharev1beta1.Phare
 
 	found, err := r.fetchPhareResource(ctx, req, &phare)
 	if err != nil {
-		return ctrl.Result{}, err // TODO: Main resource can be fetched often. `RequeueAfter: 5 * time.Minute`?
+		return ctrl.Result{}, err
 	}
 	if !found {
 		return ctrl.Result{}, nil
@@ -98,7 +92,7 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	// Update status after successful reconciliation
+	// Update status when reconcile succeeds.
 	if phare.Status.Phase != PharePhaseActive || phare.Status.Message != "Successfully reconciled Phare resource" {
 		phare.Status.Phase = PharePhaseActive
 		phare.Status.Message = "Successfully reconciled Phare resource"
@@ -123,6 +117,18 @@ func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Reque
 
 func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	labelFilter := defaultLabelPredicate("app.kubernetes.io/created-by", "phare-controller")
+	gcpBackendPolicy := &unstructured.Unstructured{}
+	gcpBackendPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.gke.io",
+		Version: "v1",
+		Kind:    "GCPBackendPolicy",
+	})
+	healthCheckPolicy := &unstructured.Unstructured{}
+	healthCheckPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.gke.io",
+		Version: "v1",
+		Kind:    "HealthCheckPolicy",
+	})
 
 	statefulSetPredicate := predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -143,10 +149,12 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}, builder.WithPredicates(labelFilter)).
 		Owns(&corev1.ConfigMap{}, builder.WithPredicates(labelFilter)).
 		Owns(&gatewayv1beta1.HTTPRoute{}, builder.WithPredicates(labelFilter)).
+		Owns(gcpBackendPolicy, builder.WithPredicates(labelFilter)).
+		Owns(healthCheckPolicy, builder.WithPredicates(labelFilter)).
 		Complete(r)
 }
 
-// Create a helper function that generates a default predicate for a given label
+// defaultLabelPredicate filters events by a required label value.
 func defaultLabelPredicate(labelKey, labelValue string) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {

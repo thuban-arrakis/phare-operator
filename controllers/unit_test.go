@@ -142,6 +142,43 @@ func TestMergeStringMaps(t *testing.T) {
 	}
 }
 
+func TestCopyStringMapPreserveNil(t *testing.T) {
+	if out := copyStringMapPreserveNil(nil); out != nil {
+		t.Fatalf("expected nil map to stay nil, got %#v", out)
+	}
+	empty := map[string]string{}
+	out := copyStringMapPreserveNil(empty)
+	if out == nil || len(out) != 0 {
+		t.Fatalf("expected empty non-nil map copy, got %#v", out)
+	}
+}
+
+func TestStringMapsEqualNilEmpty(t *testing.T) {
+	if !stringMapsEqualNilEmpty(nil, map[string]string{}) {
+		t.Fatalf("expected nil and empty maps to be considered equal")
+	}
+	if stringMapsEqualNilEmpty(map[string]string{"a": "1"}, map[string]string{}) {
+		t.Fatalf("expected differing maps to be considered different")
+	}
+}
+
+func TestShouldReallocateNodePorts(t *testing.T) {
+	phare := &pharev1beta1.Phare{}
+	if shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected no reallocation annotation to be false")
+	}
+
+	phare.Annotations = map[string]string{reallocateNodePortAnnotation: "true"}
+	if !shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected true annotation to enable reallocation")
+	}
+
+	phare.Annotations[reallocateNodePortAnnotation] = "false"
+	if shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected false annotation to disable reallocation")
+	}
+}
+
 func TestGenerateConfigMapDoesNotMutateSpecConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := pharev1beta1.AddToScheme(scheme); err != nil {

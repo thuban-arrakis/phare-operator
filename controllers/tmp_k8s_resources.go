@@ -83,7 +83,7 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 	gcpBackendPolicyList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "networking.gke.io",
 		Version: "v1",
-		Kind:    "GCPBackendPolicy",
+		Kind:    "GCPBackendPolicyList",
 	})
 
 	if err := r.List(ctx, gcpBackendPolicyList, client.InNamespace(phare.Namespace)); err != nil {
@@ -118,7 +118,7 @@ func (r *PhareReconciler) cleanupHealthCheckPolicy(ctx context.Context, phare ph
 	healthCheckPolicyList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "networking.gke.io",
 		Version: "v1",
-		Kind:    "HealthCheckPolicy",
+		Kind:    "HealthCheckPolicyList",
 	})
 
 	if err := r.List(ctx, healthCheckPolicyList, client.InNamespace(phare.Namespace)); err != nil {

@@ -6,12 +6,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FIX THIS SHIT LOGIC LATER. Diff result based on removing lines from current state, compare with desired ant return transformed map.
-// Which causes issue when for example kubectl edit resource was called & that causes changes isn't detected.
-// My main goal at this point is to implement and save basic functionallity with less effort.
+// This logic compares the desired YAML with a filtered version of the current YAML.
+// It removes fields from current data that do not exist in desired data.
+// This is simple, but it can hide some drift from manual edits.
 
-// ValidateYaml takes two YAML strings and returns true if they match according to the criteria defined in compareSpecs.
-// It now also returns the processed maps.
+// ValidateYaml compares two YAML strings and returns:
+// 1) whether they match after filtering
+// 2) the processed desired map
+// 3) the processed current map
 func ValidateYaml(desiredYaml, currentYaml string) (bool, map[string]interface{}, map[string]interface{}) {
 	var DesiredMap, CurrentMap map[string]interface{}
 	err := yaml.Unmarshal([]byte(desiredYaml), &DesiredMap)
@@ -28,7 +30,7 @@ func ValidateYaml(desiredYaml, currentYaml string) (bool, map[string]interface{}
 	filterEmptyFields(CurrentMap)
 
 	ModifiedCurrentMap := cleanMapBasedOnAnother(CurrentMap, DesiredMap)
-	return reflect.DeepEqual(ModifiedCurrentMap, DesiredMap), DesiredMap, ModifiedCurrentMap // return maps
+	return reflect.DeepEqual(ModifiedCurrentMap, DesiredMap), DesiredMap, ModifiedCurrentMap
 }
 
 // filterEmptyFields recursively filters out keys with empty values like "", null, {}, 0.
@@ -54,7 +56,6 @@ func filterEmptyFields(data map[string]interface{}) {
 	}
 }
 
-// I was talking about this piece of crap:
 // cleanMapBasedOnAnother removes keys from baseMap that aren't present in referenceMap.
 func cleanMapBasedOnAnother(baseMap, referenceMap map[string]interface{}) map[string]interface{} {
 	for k, v := range baseMap {
