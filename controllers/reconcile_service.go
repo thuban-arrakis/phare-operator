@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +12,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+const reallocateNodePortAnnotation = "phare.localcorp.internal/reallocate-nodeport"
 
 // Also untested, check it later.
 func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
@@ -51,7 +54,11 @@ func (r *PhareReconciler) reconcileService(ctx context.Context, req ctrl.Request
 	if serviceSpecsDiffer(&existingService.Spec, &desiredService.Spec) ||
 		!stringMapsEqualNilEmpty(existingService.Labels, desiredService.Labels) ||
 		!stringMapsEqualNilEmpty(existingService.Annotations, desiredService.Annotations) {
-		existingService.Spec = mergeServiceSpecPreservingImmutable(existingService.Spec, desiredService.Spec)
+		existingService.Spec = mergeServiceSpecPreservingImmutable(
+			existingService.Spec,
+			desiredService.Spec,
+			!shouldReallocateNodePorts(&phare),
+		)
 		existingService.Labels = copyStringMapPreserveNil(desiredService.Labels)
 		existingService.Annotations = copyStringMapPreserveNil(desiredService.Annotations)
 		return r.updateService(ctx, existingService)
@@ -142,7 +149,7 @@ func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec) bool {
 	return false
 }
 
-func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec) corev1.ServiceSpec {
+func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec, preserveNodePort bool) corev1.ServiceSpec {
 	merged := *desired.DeepCopy()
 
 	merged.ClusterIP = existing.ClusterIP
@@ -152,9 +159,11 @@ func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec) c
 	merged.HealthCheckNodePort = existing.HealthCheckNodePort
 	merged.LoadBalancerClass = existing.LoadBalancerClass
 
-	if len(existing.Ports) > 0 {
+	if preserveNodePort && len(existing.Ports) > 0 {
 		existingByKey := make(map[string]corev1.ServicePort, len(existing.Ports))
 		for _, p := range existing.Ports {
+			// Port identity prefers name; fallback is protocol/port.
+			// Renaming a port (named<->unnamed) changes this identity and may not preserve NodePort.
 			key := p.Name
 			if key == "" {
 				key = fmt.Sprintf("%s/%d", p.Protocol, p.Port)
@@ -173,4 +182,20 @@ func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec) c
 	}
 
 	return merged
+}
+
+func shouldReallocateNodePorts(phare *pharev1beta1.Phare) bool {
+	if phare == nil {
+		return false
+	}
+	v, ok := phare.Annotations[reallocateNodePortAnnotation]
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

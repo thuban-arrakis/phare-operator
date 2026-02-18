@@ -91,6 +91,8 @@ func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1
 
 func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *unstructured.Unstructured {
 	metadataLabels := map[string]string{
+		"app":                                   phare.Name,
+		"app.kubernetes.io/created-by":          "phare-controller",
 		"kustomize.toolkit.fluxcd.io/name":      "apps",
 		"kustomize.toolkit.fluxcd.io/namespace": "flux-system",
 	}
@@ -170,9 +172,10 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 		return nil
 	}
 
-	// metadataLabels := map[string]string{
-	//   // Define your labels here
-	// }
+	metadataLabels := map[string]string{
+		"app":                          phare.Name,
+		"app.kubernetes.io/created-by": "phare-controller",
+	}
 
 	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.HealthCheckPolicy)
 	if err != nil {
@@ -188,7 +191,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 			"metadata": map[string]interface{}{
 				"name":      phare.Name,
 				"namespace": phare.Namespace,
-				// "labels":    metadataLabels,
+				"labels":    metadataLabels,
 			},
 			"spec": spec,
 		},

@@ -136,6 +136,47 @@ func TestReconcileServiceUpdatePreservesImmutableFields(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceCanReallocateNodePortViaAnnotation(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+	phare.Annotations = map[string]string{reallocateNodePortAnnotation: "true"}
+	phare.Spec.Service = &corev1.ServiceSpec{
+		Type:  corev1.ServiceTypeNodePort,
+		Ports: []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstrFromInt(8080)}},
+	}
+
+	existing := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      phare.Name,
+			Namespace: phare.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:      corev1.ServiceTypeNodePort,
+			ClusterIP: "10.0.0.10",
+			Selector:  map[string]string{"app": "demo"},
+			Ports:     []corev1.ServicePort{{Name: "http", Port: 80, NodePort: 30080, TargetPort: intstrFromInt(80)}},
+		},
+	}
+
+	r := newTestReconciler(t, scheme, phare, existing)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile service nodeport reallocate: %v", err)
+	}
+
+	current := &corev1.Service{}
+	if err := r.Get(context.Background(), req.NamespacedName, current); err != nil {
+		t.Fatalf("get service after reconcile: %v", err)
+	}
+	if len(current.Spec.Ports) != 1 {
+		t.Fatalf("expected one service port, got %#v", current.Spec.Ports)
+	}
+	if current.Spec.Ports[0].NodePort != 0 {
+		t.Fatalf("expected nodePort to be left unset for reallocation, got %d", current.Spec.Ports[0].NodePort)
+	}
+}
+
 func TestReconcileServiceMetadataIsAuthoritative(t *testing.T) {
 	scheme := testScheme(t)
 	phare := basePhare("demo", "default")

@@ -162,6 +162,23 @@ func TestStringMapsEqualNilEmpty(t *testing.T) {
 	}
 }
 
+func TestShouldReallocateNodePorts(t *testing.T) {
+	phare := &pharev1beta1.Phare{}
+	if shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected no reallocation annotation to be false")
+	}
+
+	phare.Annotations = map[string]string{reallocateNodePortAnnotation: "true"}
+	if !shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected true annotation to enable reallocation")
+	}
+
+	phare.Annotations[reallocateNodePortAnnotation] = "false"
+	if shouldReallocateNodePorts(phare) {
+		t.Fatalf("expected false annotation to disable reallocation")
+	}
+}
+
 func TestGenerateConfigMapDoesNotMutateSpecConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := pharev1beta1.AddToScheme(scheme); err != nil {

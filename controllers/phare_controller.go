@@ -160,8 +160,8 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}, builder.WithPredicates(labelFilter)).
 		Owns(&corev1.ConfigMap{}, builder.WithPredicates(labelFilter)).
 		Owns(&gatewayv1beta1.HTTPRoute{}, builder.WithPredicates(labelFilter)).
-		Owns(gcpBackendPolicy).
-		Owns(healthCheckPolicy).
+		Owns(gcpBackendPolicy, builder.WithPredicates(labelFilter)).
+		Owns(healthCheckPolicy, builder.WithPredicates(labelFilter)).
 		Complete(r)
 }
 
