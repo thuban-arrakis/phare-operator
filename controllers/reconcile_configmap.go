@@ -40,6 +40,9 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 
 	// 2. Generate the desired ConfigMap as ToolChain and Config are non-nil.
 	desiredConfigMap := r.generateConfigMap(phare)
+	if desiredConfigMap == nil {
+		return fmt.Errorf("failed to build desired ConfigMap for %s/%s", phare.Namespace, phare.Name)
+	}
 
 	// 3. Check the existence and state of the current ConfigMap.
 	existingConfigMap := &corev1.ConfigMap{}
@@ -101,6 +104,7 @@ func (r *PhareReconciler) generateConfigMap(phare pharev1beta1.Phare) *corev1.Co
 	// Set Phare CR as the owner of this ConfigMap
 	if err := ctrl.SetControllerReference(&phare, configMap, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed to set controller reference for ConfigMap", "ConfigMap.Namespace", configMap.Namespace, "ConfigMap.Name", configMap.Name)
+		return nil
 	}
 
 	return configMap

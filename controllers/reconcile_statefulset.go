@@ -27,7 +27,7 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
 		hash, err := r.hashConfigMapData(ctx, phare.Name+"-config", phare.Namespace)
 		if err != nil {
-			r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
+			return fmt.Errorf("hash configmap %s: %w", phare.Name+"-config", err)
 		}
 		if desiredStatefulSet.Spec.Template.Annotations == nil {
 			desiredStatefulSet.Spec.Template.Annotations = make(map[string]string)

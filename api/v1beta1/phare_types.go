@@ -124,8 +124,8 @@ type ToolChainSpec struct {
 type ConfigSpec map[string]string
 
 type HTTPRouteSpec struct {
-	Hostnames []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`
-	ParentRef []gatewayv1beta1.ParentReference `json:"parentRefs,omitempty"` // Ensure this is named correctly
+	Hostnames  []gatewayv1beta1.Hostname        `json:"hostnames,omitempty"`
+	ParentRefs []gatewayv1beta1.ParentReference `json:"parentRefs,omitempty"`
 	// +kubebuilder:validation:MaxItems=10
 	Rules []gatewayv1beta1.HTTPRouteRule `json:"rules,omitempty"`
 }

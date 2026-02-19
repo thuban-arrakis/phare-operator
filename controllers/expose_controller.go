@@ -17,7 +17,7 @@ import (
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
-func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingHttpRoute := &gatewayv1beta1.HTTPRoute{}
 	desired := r.desiredHttpRoute(&phare)
 	err := r.Get(ctx, req.NamespacedName, existingHttpRoute)
@@ -26,12 +26,12 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 		if errors.IsNotFound(err) {
 			// HTTPRoute doesn't exist, create it
 			if err := r.Create(ctx, desired); err != nil {
-				return ctrl.Result{}, err
+				return err
 			}
 			r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created HTTPRoute %s", desired.Name)
-			return ctrl.Result{}, nil
+			return nil
 		}
-		return ctrl.Result{}, err
+		return err
 	}
 
 	if !specMatchesDesired(existingHttpRoute.Spec, desired.Spec) ||
@@ -46,14 +46,14 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 		existingHttpRoute.ObjectMeta.Labels = copyStringMapPreserveNil(desired.ObjectMeta.Labels)
 
 		if err := r.Patch(ctx, existingHttpRoute, patch, client.FieldOwner("phare-controller")); err != nil {
-			return ctrl.Result{}, err
+			return err
 		}
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	r.Log.Info("HTTPRoute matches the desired configuration", "HTTPRoute.Namespace", desired.Namespace, "HTTPRoute.Name", desired.Name)
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1beta1.HTTPRoute {
@@ -77,7 +77,7 @@ func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1
 			Hostnames: phare.Spec.ToolChain.HTTPRoute.Hostnames,
 			Rules:     phare.Spec.ToolChain.HTTPRoute.Rules,
 			CommonRouteSpec: gatewayv1beta1.CommonRouteSpec{
-				ParentRefs: phare.Spec.ToolChain.HTTPRoute.ParentRef,
+				ParentRefs: phare.Spec.ToolChain.HTTPRoute.ParentRefs,
 			},
 		},
 	}
@@ -125,7 +125,7 @@ func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *un
 	return gcpBackendPolicy
 }
 
-func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingGCPBackendPolicy := &unstructured.Unstructured{}
 
 	existingGCPBackendPolicy.SetGroupVersionKind(schema.GroupVersionKind{
@@ -136,7 +136,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 
 	desired := r.desiredGCPBackendPolicy(&phare)
 	if desired == nil {
-		return ctrl.Result{}, nil
+		return nil
 	}
 	err := r.Get(ctx, req.NamespacedName, existingGCPBackendPolicy)
 
@@ -144,12 +144,12 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 		if errors.IsNotFound(err) {
 			// GCPBackendPolicy doesn't exist, create it
 			if err := r.Create(ctx, desired); err != nil {
-				return ctrl.Result{}, err
+				return err
 			}
 			r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created GCPBackendPolicy %s", desired.GetName())
-			return ctrl.Result{}, nil
+			return nil
 		}
-		return ctrl.Result{}, err
+		return err
 	}
 
 	if !specMatchesDesired(existingGCPBackendPolicy.Object["spec"], desired.Object["spec"]) ||
@@ -164,13 +164,13 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 		existingGCPBackendPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingGCPBackendPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
-			return ctrl.Result{}, err
+			return err
 		}
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	r.Log.Info("GCPBackendPolicy matches the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *unstructured.Unstructured {
@@ -209,7 +209,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 	return healthCheckPolicy
 }
 
-func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) (ctrl.Result, error) {
+func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingHealthCheckPolicy := &unstructured.Unstructured{}
 
 	existingHealthCheckPolicy.SetGroupVersionKind(schema.GroupVersionKind{
@@ -220,7 +220,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 
 	desired := r.desiredHealthCheckPolicy(&phare)
 	if desired == nil {
-		return ctrl.Result{}, nil
+		return nil
 	}
 	err := r.Get(ctx, req.NamespacedName, existingHealthCheckPolicy)
 
@@ -228,12 +228,12 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 		if errors.IsNotFound(err) {
 			// HealthCheckPolicy doesn't exist, create it
 			if err := r.Create(ctx, desired); err != nil {
-				return ctrl.Result{}, err
+				return err
 			}
 			r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "CreatedResource", "Created HealthCheckPolicy %s", desired.GetName())
-			return ctrl.Result{}, nil
+			return nil
 		}
-		return ctrl.Result{}, err
+		return err
 	}
 
 	if !specMatchesDesired(existingHealthCheckPolicy.Object["spec"], desired.Object["spec"]) ||
@@ -248,14 +248,14 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 		existingHealthCheckPolicy.SetLabels(copyStringMapPreserveNil(desired.GetLabels()))
 
 		if err := r.Patch(ctx, existingHealthCheckPolicy, patch, client.FieldOwner("phare-controller")); err != nil {
-			return ctrl.Result{}, err
+			return err
 		}
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	r.Log.Info("HealthCheckPolicy matches the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
 
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func specMatchesDesired(existingSpec, desiredSpec interface{}) bool {
