@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 	tpl "github.com/localcorp/phare-controller/pkg/go-templates"
@@ -53,10 +54,10 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 	} else if err == nil && !isDataEqual(existingConfigMap.Data, desiredConfigMap.Data) {
 		// ConfigMap exists and differs from desired, update it.
 		existingConfigMap.Data = desiredConfigMap.Data
-		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredConfigMap.Name)
 		if updateErr := r.Update(ctx, existingConfigMap); updateErr != nil {
 			return updateErr
 		}
+		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "UpdatedResource", "Updated ConfigMap %s", desiredConfigMap.Name)
 	} else if err != nil {
 		// Some other error occurred while fetching the ConfigMap.
 		return err
@@ -130,13 +131,11 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-// hashConfigMapData returns a deterministic hash of ConfigMap data.
+// hashConfigMapData returns a deterministic SHA-256 hash of ConfigMap data.
 // It returns an error if the ConfigMap does not exist.
-
-func (r *PhareReconciler) hashConfigMapData(configMapName string, namespace string) (string, error) {
+func (r *PhareReconciler) hashConfigMapData(ctx context.Context, configMapName string, namespace string) (string, error) {
 	cm := &corev1.ConfigMap{}
-	err := r.Get(context.Background(), types.NamespacedName{Name: configMapName, Namespace: namespace}, cm)
-	if err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, cm); err != nil {
 		return "", err
 	}
 
@@ -146,10 +145,13 @@ func (r *PhareReconciler) hashConfigMapData(configMapName string, namespace stri
 	}
 	sort.Strings(keys)
 
-	hashData := ""
+	var sb strings.Builder
 	for _, k := range keys {
-		hashData = hashData + k + cm.Data[k]
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(cm.Data[k])
+		sb.WriteByte('\n')
 	}
 
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(hashData))), nil
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(sb.String()))), nil
 }

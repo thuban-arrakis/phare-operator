@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -22,6 +21,20 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 	if desiredStatefulSet == nil {
 		return fmt.Errorf("failed to build desired StatefulSet for %s/%s", phare.Namespace, phare.Name)
 	}
+
+	// Inject ConfigMap hash annotation using the reconcile context so that pod
+	// templates are rolled when config changes.
+	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
+		hash, err := r.hashConfigMapData(ctx, phare.Name+"-config", phare.Namespace)
+		if err != nil {
+			r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
+		}
+		if desiredStatefulSet.Spec.Template.Annotations == nil {
+			desiredStatefulSet.Spec.Template.Annotations = make(map[string]string)
+		}
+		desiredStatefulSet.Spec.Template.Annotations["checksum/config-files"] = hash
+	}
+
 	existingStatefulSet := &appsv1.StatefulSet{}
 	err := r.Get(ctx, client.ObjectKey{Name: desiredStatefulSet.Name, Namespace: phare.Namespace}, existingStatefulSet)
 
@@ -66,16 +79,13 @@ func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStateful
 	spec.Tolerations = desired.Tolerations
 	spec.Affinity = desired.Affinity
 	existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
-
 }
 
 func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.StatefulSet {
-
 	// Base labels for resources created by this controller.
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
-		// "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
 	}
 
 	// Default pod labels and annotations.
@@ -90,6 +100,24 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 	for key, value := range phare.Spec.MicroService.PodAnnotations {
 		podAnnotations[key] = value
 	}
+
+	containers := []corev1.Container{
+		{
+			Name:           phare.Name,
+			Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
+			VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
+			Command:        phare.Spec.MicroService.Command,
+			Args:           phare.Spec.MicroService.Args,
+			Env:            phare.Spec.MicroService.Env,
+			EnvFrom:        phare.Spec.MicroService.EnvFrom,
+			Ports:          phare.Spec.MicroService.Ports,
+			Resources:      phare.Spec.MicroService.ResourceRequirements,
+			LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
+			ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+			StartupProbe:   phare.Spec.MicroService.StartupProbe,
+		},
+	}
+	containers = append(containers, phare.Spec.MicroService.ExtraContainers...)
 
 	statefulSet := &appsv1.StatefulSet{
 		TypeMeta: metav1.TypeMeta{
@@ -112,22 +140,7 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:           phare.Name,
-							Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
-							VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
-							Command:        phare.Spec.MicroService.Command,
-							Args:           phare.Spec.MicroService.Args,
-							Env:            phare.Spec.MicroService.Env,
-							EnvFrom:        phare.Spec.MicroService.EnvFrom,
-							Ports:          phare.Spec.MicroService.Ports,
-							Resources:      phare.Spec.MicroService.ResourceRequirements,
-							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
-							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
-							StartupProbe:   phare.Spec.MicroService.StartupProbe,
-						},
-					},
+					Containers:     containers,
 					InitContainers: phare.Spec.MicroService.InitContainers,
 					Affinity:       phare.Spec.MicroService.Affinity,
 					Tolerations:    phare.Spec.MicroService.Tolerations,
@@ -138,20 +151,15 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 		},
 	}
 
-	// Set owner reference for the statefulset to be the Phare object
-	// https://book.kubebuilder.io/reference/using-finalizers.html#finalizer-owners.
+	// Set owner reference for the StatefulSet to be the Phare object.
 	if err := ctrl.SetControllerReference(phare, statefulSet, r.Scheme); err != nil {
-		r.Log.Error(err, "Failed to set controller reference for statefulset", "Statefulset.Namespace", statefulSet.Namespace, "Statefulset.Name", statefulSet.Name)
+		r.Log.Error(err, "Failed to set controller reference for StatefulSet", "StatefulSet.Namespace", statefulSet.Namespace, "StatefulSet.Name", statefulSet.Name)
 		return nil
 	}
 
-	if phare.Spec.MicroService.ExtraContainers != nil && len(phare.Spec.MicroService.ExtraContainers) > 0 {
-		statefulSet.Spec.Template.Spec.Containers = append(statefulSet.Spec.Template.Spec.Containers, phare.Spec.MicroService.ExtraContainers...)
-	}
-
 	// Add config volume only when toolchain config exists.
-	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config) > 0 {
-		r.addConfigVolumeToStatefulset(statefulSet, phare)
+	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
+		addConfigVolumeToSpec(&statefulSet.Spec.Template, phare.Name+"-config")
 	}
 
 	// Set default file mode for Secret/ConfigMap volumes.
@@ -166,38 +174,4 @@ func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.Stat
 	}
 
 	return statefulSet
-}
-
-func (r *PhareReconciler) addConfigVolumeToStatefulset(statefulSet *appsv1.StatefulSet, phare *pharev1beta1.Phare) {
-	statefulSetVolume := corev1.Volume{
-		Name: "config-volume",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: phare.Name + "-config",
-				},
-				DefaultMode: pointer.Int32(420),
-				Optional:    pointer.Bool(false),
-			},
-		},
-	}
-	configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
-	if err != nil {
-		r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
-	}
-
-	if statefulSet.Spec.Template.Annotations == nil {
-		statefulSet.Spec.Template.Annotations = make(map[string]string)
-	}
-	statefulSet.Spec.Template.Annotations["checksum/config-files"] = configMapDataHash
-
-	// Prepend the volume to the beginning of the Volumes slice
-	statefulSet.Spec.Template.Spec.Volumes = append([]corev1.Volume{statefulSetVolume}, statefulSet.Spec.Template.Spec.Volumes...)
-
-	// Prepend the volume mount for the container
-	volumeMount := corev1.VolumeMount{
-		Name:      "config-volume",
-		MountPath: "/path/to/mount",
-	}
-	statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts = append([]corev1.VolumeMount{volumeMount}, statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts...)
 }

@@ -91,11 +91,13 @@ func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1
 }
 
 func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *unstructured.Unstructured {
+	if phare.Spec.ToolChain == nil || phare.Spec.ToolChain.GCPBackendPolicy == nil {
+		return nil
+	}
+
 	metadataLabels := map[string]string{
-		"app":                                   phare.Name,
-		"app.kubernetes.io/created-by":          "phare-controller",
-		"kustomize.toolkit.fluxcd.io/name":      "apps",
-		"kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+		"app":                          phare.Name,
+		"app.kubernetes.io/created-by": "phare-controller",
 	}
 
 	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.GCPBackendPolicy)
@@ -133,6 +135,9 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 	})
 
 	desired := r.desiredGCPBackendPolicy(&phare)
+	if desired == nil {
+		return ctrl.Result{}, nil
+	}
 	err := r.Get(ctx, req.NamespacedName, existingGCPBackendPolicy)
 
 	if err != nil {

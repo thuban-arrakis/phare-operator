@@ -68,39 +68,54 @@ func (r *PhareReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
+	if err := r.reconcileResources(ctx, req, phare); err != nil {
+		// Best-effort: record Failed status. The original error is returned
+		// regardless so the controller requeues even if the status write fails.
+		r.updateStatus(ctx, &phare, pharev1beta1.PharePhaseFailed, err.Error()) //nolint:errcheck
+		return ctrl.Result{}, err
+	}
+
+	// Propagate status-write failures on the success path so the controller
+	// requeues instead of silently leaving stale status.
+	return ctrl.Result{}, r.updateStatus(ctx, &phare, pharev1beta1.PharePhaseActive, "Successfully reconciled Phare resource")
+}
+
+// reconcileResources runs every sub-reconciler in dependency order.
+func (r *PhareReconciler) reconcileResources(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	if err := r.reconcileConfigMap(ctx, phare); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
-
 	if err := r.reconcileService(ctx, req, phare); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
-
 	if err := r.handleHTTPRoute(ctx, req, phare); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
-
 	if err := r.handleGCPBackendPolicy(ctx, req, phare); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
-
 	if err := r.handleHealthCheckPolicy(ctx, req, phare); err != nil {
-		return ctrl.Result{}, err
+		return err
 	}
+	return r.reconcileMicroService(ctx, phare)
+}
 
-	if err := r.reconcileMicroService(ctx, phare); err != nil {
-		return ctrl.Result{}, err
+// updateStatus writes phase/message to the Phare status subresource, skipping the
+// write when the status is already up-to-date. The returned error should be
+// propagated on success paths so the controller requeues on status write failure.
+// On error paths it is safe to discard the return value because the original
+// reconcile error already causes a requeue.
+func (r *PhareReconciler) updateStatus(ctx context.Context, phare *pharev1beta1.Phare, phase pharev1beta1.PharePhase, message string) error {
+	if phare.Status.Phase == phase && phare.Status.Message == message {
+		return nil
 	}
-
-	// Update status when reconcile succeeds.
-	if phare.Status.Phase != PharePhaseActive || phare.Status.Message != "Successfully reconciled Phare resource" {
-		phare.Status.Phase = PharePhaseActive
-		phare.Status.Message = "Successfully reconciled Phare resource"
-		if err := r.Status().Update(ctx, &phare); err != nil {
-			return ctrl.Result{}, err
-		}
+	phare.Status.Phase = phase
+	phare.Status.Message = message
+	if err := r.Status().Update(ctx, phare); err != nil {
+		r.Log.Error(err, "Failed to update Phare status")
+		return err
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *PhareReconciler) fetchPhareResource(ctx context.Context, req ctrl.Request, phare *pharev1beta1.Phare) (bool, error) {

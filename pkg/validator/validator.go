@@ -50,6 +50,11 @@ func filterEmptyFields(data map[string]interface{}) {
 			if value == 0 {
 				delete(data, k)
 			}
+		case float64:
+			// encoding/yaml unmarshals all numbers as float64.
+			if value == 0 {
+				delete(data, k)
+			}
 		case nil:
 			delete(data, k)
 		}
