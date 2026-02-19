@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+	tpl "github.com/localcorp/phare-controller/pkg/go-templates"
 )
 
 // configVolumeMountPath is the container path where the managed ConfigMap is mounted.
@@ -30,7 +31,7 @@ func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1
 	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
 		hash, err := r.hashConfigMapData(ctx, phare.Name+"-config", phare.Namespace)
 		if err != nil {
-			r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
+			return fmt.Errorf("hash configmap %s: %w", phare.Name+"-config", err)
 		}
 		if desiredDeployment.Spec.Template.Annotations == nil {
 			desiredDeployment.Spec.Template.Annotations = make(map[string]string)
@@ -172,6 +173,12 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 	// Set default file mode for Secret/ConfigMap volumes.
 	for i := range deployment.Spec.Template.Spec.Volumes {
 		UpdateVolume(&deployment.Spec.Template.Spec.Volumes[i], 420)
+	}
+
+	// Render liveness probe templates if present.
+	if err := tpl.ProcessLivenessProbeTemplate(deployment.Spec.Template.Spec.Containers[0].LivenessProbe, phare.ObjectMeta); err != nil {
+		r.Log.Error(err, "Error processing liveness probe template")
+		return nil
 	}
 
 	return deployment

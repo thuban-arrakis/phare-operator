@@ -69,10 +69,13 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	scheme := testScheme(t)
 	phare := basePhare("demo", "default")
 
+	ownedLabels := map[string]string{"app": phare.Name, "app.kubernetes.io/created-by": "phare-controller"}
+
 	gcp := &unstructured.Unstructured{}
 	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
 	gcp.SetName(phare.Name)
 	gcp.SetNamespace(phare.Namespace)
+	gcp.SetLabels(ownedLabels)
 	gcp.SetOwnerReferences([]metav1.OwnerReference{{
 		APIVersion: pharev1beta1.GroupVersion.String(),
 		Kind:       "Phare",
@@ -85,6 +88,7 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	health.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "HealthCheckPolicy"})
 	health.SetName(phare.Name)
 	health.SetNamespace(phare.Namespace)
+	health.SetLabels(ownedLabels)
 	health.SetOwnerReferences([]metav1.OwnerReference{{
 		APIVersion: pharev1beta1.GroupVersion.String(),
 		Kind:       "Phare",

@@ -5,7 +5,10 @@ import (
 	"fmt"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -15,35 +18,38 @@ import (
 
 func (r *PhareReconciler) handleHTTPRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.HTTPRoute != nil {
-		_, err := r.reconcileHttpRoute(ctx, req, phare)
-		return err
+		return r.reconcileHttpRoute(ctx, req, phare)
 	}
 	return r.cleanupHTTPRoute(ctx, phare)
 }
 
 func (r *PhareReconciler) cleanupHTTPRoute(ctx context.Context, phare pharev1beta1.Phare) error {
 	httpRouteList := &gatewayv1beta1.HTTPRouteList{}
-	if err := r.List(ctx, httpRouteList, client.InNamespace(phare.Namespace)); err != nil {
+	if err := r.List(ctx, httpRouteList,
+		client.InNamespace(phare.Namespace),
+		client.MatchingLabels{"app": phare.Name, "app.kubernetes.io/created-by": "phare-controller"},
+	); err != nil {
+		if apimeta.IsNoMatchError(err) || errors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
-	for _, httpRoute := range httpRouteList.Items {
-		for _, ownerRef := range httpRoute.OwnerReferences {
-			if ownerRef.UID == phare.UID {
-				if err := r.Delete(ctx, &httpRoute); err != nil {
-					return err
-				}
-				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", phare.Name)
+	for i := range httpRouteList.Items {
+		if err := r.Delete(ctx, &httpRouteList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
 			}
+			return err
 		}
+		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", httpRouteList.Items[i].GetName())
 	}
 	return nil
 }
 
 func (r *PhareReconciler) handleGCPBackendPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.GCPBackendPolicy != nil {
-		_, err := r.reconcileGCPBackendPolicy(ctx, req, phare)
-		return err
+		return r.reconcileGCPBackendPolicy(ctx, req, phare)
 	}
 	return r.cleanupGCPBackendPolicy(ctx, phare)
 }
@@ -56,28 +62,31 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 		Kind:    "GCPBackendPolicyList",
 	})
 
-	if err := r.List(ctx, gcpBackendPolicyList, client.InNamespace(phare.Namespace)); err != nil {
+	if err := r.List(ctx, gcpBackendPolicyList,
+		client.InNamespace(phare.Namespace),
+		client.MatchingLabels{"app": phare.Name, "app.kubernetes.io/created-by": "phare-controller"},
+	); err != nil {
+		if apimeta.IsNoMatchError(err) || errors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
-	for _, gcpBackendPolicy := range gcpBackendPolicyList.Items {
-		r.Log.Info("Processing GCPBackendPolicy", "name", gcpBackendPolicy.GetName(), "namespace", gcpBackendPolicy.GetNamespace(), "kind", gcpBackendPolicy.GetKind())
-		for _, ownerRef := range gcpBackendPolicy.GetOwnerReferences() {
-			if ownerRef.UID == phare.UID {
-				if err := r.Delete(ctx, &gcpBackendPolicy); err != nil {
-					return err
-				}
-				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", phare.Name)
+	for i := range gcpBackendPolicyList.Items {
+		if err := r.Delete(ctx, &gcpBackendPolicyList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
 			}
+			return err
 		}
+		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", gcpBackendPolicyList.Items[i].GetName())
 	}
 	return nil
 }
 
 func (r *PhareReconciler) handleHealthCheckPolicy(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.HealthCheckPolicy != nil {
-		_, err := r.reconcileHealthCheckPolicy(ctx, req, phare)
-		return err
+		return r.reconcileHealthCheckPolicy(ctx, req, phare)
 	}
 	return r.cleanupHealthCheckPolicy(ctx, phare)
 }
@@ -90,19 +99,24 @@ func (r *PhareReconciler) cleanupHealthCheckPolicy(ctx context.Context, phare ph
 		Kind:    "HealthCheckPolicyList",
 	})
 
-	if err := r.List(ctx, healthCheckPolicyList, client.InNamespace(phare.Namespace)); err != nil {
+	if err := r.List(ctx, healthCheckPolicyList,
+		client.InNamespace(phare.Namespace),
+		client.MatchingLabels{"app": phare.Name, "app.kubernetes.io/created-by": "phare-controller"},
+	); err != nil {
+		if apimeta.IsNoMatchError(err) || errors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
-	for _, healthCheckPolicy := range healthCheckPolicyList.Items {
-		for _, ownerRef := range healthCheckPolicy.GetOwnerReferences() {
-			if ownerRef.UID == phare.UID {
-				if err := r.Delete(ctx, &healthCheckPolicy); err != nil {
-					return err
-				}
-				r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HealthCheckPolicy %s", phare.Name)
+	for i := range healthCheckPolicyList.Items {
+		if err := r.Delete(ctx, &healthCheckPolicyList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
 			}
+			return err
 		}
+		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HealthCheckPolicy %s", healthCheckPolicyList.Items[i].GetName())
 	}
 	return nil
 }
@@ -110,12 +124,38 @@ func (r *PhareReconciler) cleanupHealthCheckPolicy(ctx context.Context, phare ph
 func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare pharev1beta1.Phare) error {
 	switch phare.Spec.MicroService.Kind {
 	case "Deployment":
+		// Remove a stale StatefulSet left over from a previous Kind value.
+		if err := r.deleteIfExists(ctx, &appsv1.StatefulSet{}, phare.Name, phare.Namespace); err != nil {
+			return err
+		}
 		r.Log.Info("Reconciling Deployment", "Deployment.Namespace", phare.Namespace, "Deployment.Name", phare.Name)
 		return r.reconcileDeployment(ctx, phare)
 	case "StatefulSet":
+		// Remove a stale Deployment left over from a previous Kind value.
+		if err := r.deleteIfExists(ctx, &appsv1.Deployment{}, phare.Name, phare.Namespace); err != nil {
+			return err
+		}
 		r.Log.Info("Reconciling StatefulSet", "StatefulSet.Namespace", phare.Namespace, "StatefulSet.Name", phare.Name)
 		return r.reconcileStatefulSet(ctx, phare)
 	default:
 		return fmt.Errorf("unsupported kind: %s", phare.Spec.MicroService.Kind)
 	}
+}
+
+// deleteIfExists deletes the named object if it exists; returns nil on NotFound.
+// NotFound is also tolerated on Delete to handle concurrent deletion (TOCTOU).
+func (r *PhareReconciler) deleteIfExists(ctx context.Context, obj client.Object, name, namespace string) error {
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if err := r.Delete(ctx, obj); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
