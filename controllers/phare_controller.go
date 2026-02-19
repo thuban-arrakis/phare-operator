@@ -146,15 +146,7 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 
 	statefulSetPredicate := predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldStatefulSet, ok1 := e.ObjectOld.(*appsv1.StatefulSet)
-			newStatefulSet, ok2 := e.ObjectNew.(*appsv1.StatefulSet)
-			if ok1 && ok2 {
-				return oldStatefulSet.GetGeneration() != newStatefulSet.GetGeneration()
-			}
-			// Default to reconcile if we can't cast the objects correctly
-			return true
-		},
+		UpdateFunc: statefulSetUpdatePredicate(),
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -167,6 +159,27 @@ func (r *PhareReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(gcpBackendPolicy, builder.WithPredicates(labelFilter)).
 		Owns(healthCheckPolicy, builder.WithPredicates(labelFilter)).
 		Complete(r)
+}
+
+// statefulSetUpdatePredicate returns an UpdateFunc that gates StatefulSet updates
+// on generation changes while always passing through managed-label transitions.
+func statefulSetUpdatePredicate() func(event.UpdateEvent) bool {
+	return func(e event.UpdateEvent) bool {
+		oldSS, ok1 := e.ObjectOld.(*appsv1.StatefulSet)
+		newSS, ok2 := e.ObjectNew.(*appsv1.StatefulSet)
+		if ok1 && ok2 {
+			// Always reconcile when the managed label is being added or removed so
+			// that label-drift is detected even without a generation bump.
+			oldManaged := oldSS.GetLabels()["app.kubernetes.io/created-by"] == "phare-controller"
+			newManaged := newSS.GetLabels()["app.kubernetes.io/created-by"] == "phare-controller"
+			if oldManaged != newManaged {
+				return true
+			}
+			return oldSS.GetGeneration() != newSS.GetGeneration()
+		}
+		// Default to reconcile if we can't cast the objects correctly.
+		return true
+	}
 }
 
 // defaultLabelPredicate filters events by a required label value.

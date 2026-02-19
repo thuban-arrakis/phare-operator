@@ -82,14 +82,14 @@ func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare phare
 	switch phare.Spec.MicroService.Kind {
 	case "Deployment":
 		// Remove a stale StatefulSet left over from a previous Kind value.
-		if err := r.deleteIfExists(ctx, &appsv1.StatefulSet{}, phare.Name, phare.Namespace); err != nil {
+		if err := r.deleteIfExists(ctx, &appsv1.StatefulSet{}, phare.Name, phare.Namespace, &phare); err != nil {
 			return err
 		}
 		r.Log.Info("Reconciling Deployment", "Deployment.Namespace", phare.Namespace, "Deployment.Name", phare.Name)
 		return r.reconcileDeployment(ctx, phare)
 	case "StatefulSet":
 		// Remove a stale Deployment left over from a previous Kind value.
-		if err := r.deleteIfExists(ctx, &appsv1.Deployment{}, phare.Name, phare.Namespace); err != nil {
+		if err := r.deleteIfExists(ctx, &appsv1.Deployment{}, phare.Name, phare.Namespace, &phare); err != nil {
 			return err
 		}
 		r.Log.Info("Reconciling StatefulSet", "StatefulSet.Namespace", phare.Namespace, "StatefulSet.Name", phare.Name)
@@ -99,14 +99,17 @@ func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare phare
 	}
 }
 
-// deleteIfExists deletes the named object if it exists; returns nil on NotFound.
-// NotFound is also tolerated on Delete to handle concurrent deletion (TOCTOU).
-func (r *PhareReconciler) deleteIfExists(ctx context.Context, obj client.Object, name, namespace string) error {
+// deleteIfExists deletes the named object if it exists and is owned by phare.
+// NotFound is tolerated on both Get and Delete to handle concurrent deletion (TOCTOU).
+func (r *PhareReconciler) deleteIfExists(ctx context.Context, obj client.Object, name, namespace string, phare *pharev1beta1.Phare) error {
 	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj); err != nil {
 		if errors.IsNotFound(err) {
 			return nil
 		}
 		return err
+	}
+	if !metav1.IsControlledBy(obj, phare) {
+		return nil
 	}
 	if err := r.Delete(ctx, obj); err != nil {
 		if errors.IsNotFound(err) {

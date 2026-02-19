@@ -8,10 +8,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestSpecMatchesDesired(t *testing.T) {
@@ -237,5 +239,51 @@ func TestReconcileGCPBackendPolicyRemovesStaleSpecFields(t *testing.T) {
 	}
 	if current.GetLabels()["stale"] != "" {
 		t.Fatalf("expected stale labels to be removed, got %#v", current.GetLabels())
+	}
+}
+
+// emptyScheme has no types registered so SetControllerReference will fail,
+// exercising the nil-return paths in the desired* builder functions.
+func emptyScheme() *runtime.Scheme { return runtime.NewScheme() }
+
+func TestDesiredHttpRouteReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		HTTPRoute: &pharev1beta1.HTTPRouteSpec{},
+	}
+	if got := r.desiredHttpRoute(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
+	}
+}
+
+func TestDesiredGCPBackendPolicyReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		GCPBackendPolicy: &pharev1beta1.GCPBackendPolicySpec{},
+	}
+	if got := r.desiredGCPBackendPolicy(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
+	}
+}
+
+func TestDesiredHealthCheckPolicyReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		HealthCheckPolicy: &pharev1beta1.HealthCheckPolicySpec{},
+	}
+	if got := r.desiredHealthCheckPolicy(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
 	}
 }

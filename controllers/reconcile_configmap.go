@@ -30,7 +30,7 @@ func (r *PhareReconciler) reconcileConfigMap(ctx context.Context, phare pharev1b
 
 		// If an existing ConfigMap was found, delete it.
 		if err == nil {
-			if deleteErr := r.Delete(ctx, existingConfigMap); deleteErr != nil {
+			if deleteErr := r.Delete(ctx, existingConfigMap); deleteErr != nil && !errors.IsNotFound(deleteErr) {
 				return deleteErr
 			}
 			r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted ConfigMap %s", existingConfigMap.Name)

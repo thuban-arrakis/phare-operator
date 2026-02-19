@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -78,5 +79,47 @@ func TestDefaultLabelPredicateUpdateTriggersOnLabelRemoval(t *testing.T) {
 
 	if !pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}) {
 		t.Fatalf("expected update predicate to trigger when managed label is removed")
+	}
+}
+
+func makeStatefulSet(name string, labels map[string]string, generation int64) *appsv1.StatefulSet {
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       name,
+			Namespace:  "default",
+			Labels:     labels,
+			Generation: generation,
+		},
+	}
+}
+
+func TestStatefulSetPredicateLabelRemovalTriggersWithoutGenerationChange(t *testing.T) {
+	// Build the same predicate pair used in SetupWithManager.
+	labelFilter := defaultLabelPredicate("app.kubernetes.io/created-by", "phare-controller")
+	managed := map[string]string{"app.kubernetes.io/created-by": "phare-controller"}
+
+	oldSS := makeStatefulSet("app", managed, 1)
+	newSS := makeStatefulSet("app", map[string]string{}, 1) // label removed, generation unchanged
+
+	// labelFilter.Update: oldMatch=true → passes.
+	if !labelFilter.Update(event.UpdateEvent{ObjectOld: oldSS, ObjectNew: newSS}) {
+		t.Fatal("labelFilter should pass on label removal")
+	}
+
+	// statefulSetPredicate must also pass so the AND combination triggers.
+	ssPred := statefulSetUpdatePredicate()
+	if !ssPred(event.UpdateEvent{ObjectOld: oldSS, ObjectNew: newSS}) {
+		t.Fatal("statefulSetPredicate should pass on label removal even without generation change")
+	}
+}
+
+func TestStatefulSetPredicateSuppressesNoOpUpdates(t *testing.T) {
+	managed := map[string]string{"app.kubernetes.io/created-by": "phare-controller"}
+	oldSS := makeStatefulSet("app", managed, 1)
+	newSS := makeStatefulSet("app", managed, 1) // nothing changed
+
+	ssPred := statefulSetUpdatePredicate()
+	if ssPred(event.UpdateEvent{ObjectOld: oldSS, ObjectNew: newSS}) {
+		t.Fatal("statefulSetPredicate should suppress updates with no generation change and stable labels")
 	}
 }
