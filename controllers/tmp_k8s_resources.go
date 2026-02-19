@@ -37,6 +37,9 @@ func (r *PhareReconciler) cleanupHTTPRoute(ctx context.Context, phare pharev1bet
 
 	for i := range httpRouteList.Items {
 		if err := r.Delete(ctx, &httpRouteList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
 			return err
 		}
 		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HTTPRoute %s", httpRouteList.Items[i].GetName())
@@ -71,6 +74,9 @@ func (r *PhareReconciler) cleanupGCPBackendPolicy(ctx context.Context, phare pha
 
 	for i := range gcpBackendPolicyList.Items {
 		if err := r.Delete(ctx, &gcpBackendPolicyList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
 			return err
 		}
 		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted GCPBackendPolicy %s", gcpBackendPolicyList.Items[i].GetName())
@@ -105,6 +111,9 @@ func (r *PhareReconciler) cleanupHealthCheckPolicy(ctx context.Context, phare ph
 
 	for i := range healthCheckPolicyList.Items {
 		if err := r.Delete(ctx, &healthCheckPolicyList.Items[i]); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
 			return err
 		}
 		r.Recorder.Eventf(&phare, corev1.EventTypeNormal, "DeletedResource", "Deleted HealthCheckPolicy %s", healthCheckPolicyList.Items[i].GetName())
@@ -134,6 +143,7 @@ func (r *PhareReconciler) reconcileMicroService(ctx context.Context, phare phare
 }
 
 // deleteIfExists deletes the named object if it exists; returns nil on NotFound.
+// NotFound is also tolerated on Delete to handle concurrent deletion (TOCTOU).
 func (r *PhareReconciler) deleteIfExists(ctx context.Context, obj client.Object, name, namespace string) error {
 	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, obj); err != nil {
 		if errors.IsNotFound(err) {
@@ -141,5 +151,11 @@ func (r *PhareReconciler) deleteIfExists(ctx context.Context, obj client.Object,
 		}
 		return err
 	}
-	return r.Delete(ctx, obj)
+	if err := r.Delete(ctx, obj); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
