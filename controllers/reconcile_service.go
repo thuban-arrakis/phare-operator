@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -202,6 +201,9 @@ func serviceAnnotationsFromPhare(in map[string]string) map[string]string {
 	return out
 }
 
+// normalizeServiceSpecForDiff treats omitted optional fields as "keep existing".
+// Explicit empty values in desired (for example, []string{}) are preserved as
+// explicit clears and should still be detected as drift.
 func normalizeServiceSpecForDiff(existing, desired corev1.ServiceSpec) corev1.ServiceSpec {
 	out := *desired.DeepCopy()
 
@@ -238,13 +240,5 @@ func normalizeServiceSpecForDiff(existing, desired corev1.ServiceSpec) corev1.Se
 }
 
 func canonicalizeServiceSpec(spec corev1.ServiceSpec) interface{} {
-	b, err := json.Marshal(spec)
-	if err != nil {
-		return spec
-	}
-	var out interface{}
-	if err := json.Unmarshal(b, &out); err != nil {
-		return spec
-	}
-	return out
+	return canonicalizeSpec(spec)
 }

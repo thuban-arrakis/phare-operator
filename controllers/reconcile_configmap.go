@@ -133,6 +133,8 @@ func copyStringMap(in map[string]string) map[string]string {
 
 // hashConfigMapData returns a deterministic SHA-256 hash of ConfigMap data.
 // It returns an error if the ConfigMap does not exist.
+// Data is encoded as "key=value\n" pairs to avoid ambiguous concatenation.
+// Note: changing this encoding can cause a one-time checksum change and rollout.
 func (r *PhareReconciler) hashConfigMapData(ctx context.Context, configMapName string, namespace string) (string, error) {
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: namespace}, cm); err != nil {
