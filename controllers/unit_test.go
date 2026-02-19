@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
@@ -142,6 +143,14 @@ func TestServiceSpecsDiffer(t *testing.T) {
 	if !serviceSpecsDiffer(existingWithPort, desiredWithDifferentPort, false) {
 		t.Fatalf("expected nodePort difference to be detected when preservation is disabled")
 	}
+
+	existingSession := base.DeepCopy()
+	existingSession.SessionAffinity = corev1.ServiceAffinityNone
+	desiredSession := base.DeepCopy()
+	desiredSession.SessionAffinity = corev1.ServiceAffinityClientIP
+	if !serviceSpecsDiffer(existingSession, desiredSession, true) {
+		t.Fatalf("expected sessionAffinity change to be detected")
+	}
 }
 
 func TestMergeStringMaps(t *testing.T) {
@@ -269,6 +278,94 @@ func TestServiceAnnotationsFromPhare(t *testing.T) {
 	if out := serviceAnnotationsFromPhare(onlyControl); out != nil {
 		t.Fatalf("expected nil when only control annotation present, got %#v", out)
 	}
+}
+
+func TestNormalizeServiceSpecForDiff(t *testing.T) {
+	boolTrue := true
+	intTrafficPolicy := corev1.ServiceInternalTrafficPolicyLocal
+	clientIPAffinity := corev1.ServiceAffinityClientIP
+	clientIPCfg := &corev1.SessionAffinityConfig{
+		ClientIP: &corev1.ClientIPConfig{
+			TimeoutSeconds: ptrInt32(10800),
+		},
+	}
+
+	existing := corev1.ServiceSpec{
+		ExternalIPs:                   []string{"1.2.3.4"},
+		LoadBalancerSourceRanges:      []string{"10.0.0.0/24"},
+		SessionAffinityConfig:         clientIPCfg,
+		InternalTrafficPolicy:         &intTrafficPolicy,
+		AllocateLoadBalancerNodePorts: &boolTrue,
+		SessionAffinity:               clientIPAffinity,
+		ExternalTrafficPolicy:         corev1.ServiceExternalTrafficPolicyTypeLocal,
+		LoadBalancerIP:                "34.1.2.3",
+		ExternalName:                  "example.org",
+	}
+
+	t.Run("nil desired slices keep existing", func(t *testing.T) {
+		desired := corev1.ServiceSpec{}
+		got := normalizeServiceSpecForDiff(existing, desired)
+		if !reflect.DeepEqual(got.ExternalIPs, existing.ExternalIPs) {
+			t.Fatalf("expected externalIPs to be kept, got %#v", got.ExternalIPs)
+		}
+		if !reflect.DeepEqual(got.LoadBalancerSourceRanges, existing.LoadBalancerSourceRanges) {
+			t.Fatalf("expected loadBalancerSourceRanges to be kept, got %#v", got.LoadBalancerSourceRanges)
+		}
+	})
+
+	t.Run("empty desired slices clear existing", func(t *testing.T) {
+		desired := corev1.ServiceSpec{
+			ExternalIPs:              []string{},
+			LoadBalancerSourceRanges: []string{},
+		}
+		got := normalizeServiceSpecForDiff(existing, desired)
+		if got.ExternalIPs == nil || len(got.ExternalIPs) != 0 {
+			t.Fatalf("expected empty externalIPs to remain empty, got %#v", got.ExternalIPs)
+		}
+		if got.LoadBalancerSourceRanges == nil || len(got.LoadBalancerSourceRanges) != 0 {
+			t.Fatalf("expected empty loadBalancerSourceRanges to remain empty, got %#v", got.LoadBalancerSourceRanges)
+		}
+	})
+
+	t.Run("nil desired pointers keep existing", func(t *testing.T) {
+		desired := corev1.ServiceSpec{}
+		got := normalizeServiceSpecForDiff(existing, desired)
+		if got.SessionAffinityConfig == nil || got.SessionAffinityConfig.ClientIP == nil {
+			t.Fatalf("expected sessionAffinityConfig to be kept, got %#v", got.SessionAffinityConfig)
+		}
+		if got.InternalTrafficPolicy == nil || *got.InternalTrafficPolicy != *existing.InternalTrafficPolicy {
+			t.Fatalf("expected internalTrafficPolicy to be kept, got %#v", got.InternalTrafficPolicy)
+		}
+		if got.AllocateLoadBalancerNodePorts == nil || *got.AllocateLoadBalancerNodePorts != *existing.AllocateLoadBalancerNodePorts {
+			t.Fatalf("expected allocateLoadBalancerNodePorts to be kept, got %#v", got.AllocateLoadBalancerNodePorts)
+		}
+	})
+
+	t.Run("empty desired strings keep existing", func(t *testing.T) {
+		desired := corev1.ServiceSpec{
+			SessionAffinity:       "",
+			ExternalTrafficPolicy: "",
+			LoadBalancerIP:        "",
+			ExternalName:          "",
+		}
+		got := normalizeServiceSpecForDiff(existing, desired)
+		if got.SessionAffinity != existing.SessionAffinity {
+			t.Fatalf("expected sessionAffinity to be kept, got %q", got.SessionAffinity)
+		}
+		if got.ExternalTrafficPolicy != existing.ExternalTrafficPolicy {
+			t.Fatalf("expected externalTrafficPolicy to be kept, got %q", got.ExternalTrafficPolicy)
+		}
+		if got.LoadBalancerIP != existing.LoadBalancerIP {
+			t.Fatalf("expected loadBalancerIP to be kept, got %q", got.LoadBalancerIP)
+		}
+		if got.ExternalName != existing.ExternalName {
+			t.Fatalf("expected externalName to be kept, got %q", got.ExternalName)
+		}
+	})
+}
+
+func ptrInt32(v int32) *int32 {
+	return &v
 }
 
 func TestGenerateConfigMapDoesNotMutateSpecConfig(t *testing.T) {

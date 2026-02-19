@@ -16,11 +16,28 @@ import (
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
 )
 
+// configVolumeMountPath is the container path where the managed ConfigMap is mounted.
+const configVolumeMountPath = "/etc/phare/config"
+
 func (r *PhareReconciler) reconcileDeployment(ctx context.Context, phare pharev1beta1.Phare) error {
 	desiredDeployment := r.newDeployment(&phare)
 	if desiredDeployment == nil {
 		return fmt.Errorf("failed to build desired Deployment for %s/%s", phare.Namespace, phare.Name)
 	}
+
+	// Inject ConfigMap hash annotation using the reconcile context so that pod
+	// templates are rolled when config changes.
+	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
+		hash, err := r.hashConfigMapData(ctx, phare.Name+"-config", phare.Namespace)
+		if err != nil {
+			r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
+		}
+		if desiredDeployment.Spec.Template.Annotations == nil {
+			desiredDeployment.Spec.Template.Annotations = make(map[string]string)
+		}
+		desiredDeployment.Spec.Template.Annotations["checksum/config-files"] = hash
+	}
+
 	existingDeployment := &appsv1.Deployment{}
 	err := r.Get(ctx, client.ObjectKey{Name: desiredDeployment.Name, Namespace: phare.Namespace}, existingDeployment)
 
@@ -77,7 +94,6 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 	metadataLabels := map[string]string{
 		"app":                          phare.Name,
 		"app.kubernetes.io/created-by": "phare-controller",
-		// "version":                      phare.Spec.MicroService.Image.Tag, // Use later for rolling updates
 	}
 
 	// Default pod labels and annotations.
@@ -92,6 +108,24 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 	for key, value := range phare.Spec.MicroService.PodAnnotations {
 		podAnnotations[key] = value
 	}
+
+	containers := []corev1.Container{
+		{
+			Name:           phare.Name,
+			Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
+			VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
+			Command:        phare.Spec.MicroService.Command,
+			Args:           phare.Spec.MicroService.Args,
+			Env:            phare.Spec.MicroService.Env,
+			EnvFrom:        phare.Spec.MicroService.EnvFrom,
+			Ports:          phare.Spec.MicroService.Ports,
+			Resources:      phare.Spec.MicroService.ResourceRequirements,
+			LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
+			ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
+			StartupProbe:   phare.Spec.MicroService.StartupProbe,
+		},
+	}
+	containers = append(containers, phare.Spec.MicroService.ExtraContainers...)
 
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -114,22 +148,7 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:           phare.Name,
-							Image:          phare.Spec.MicroService.Image.Repository + ":" + phare.Spec.MicroService.Image.Tag,
-							VolumeMounts:   phare.Spec.MicroService.VolumeMounts,
-							Command:        phare.Spec.MicroService.Command,
-							Args:           phare.Spec.MicroService.Args,
-							Env:            phare.Spec.MicroService.Env,
-							EnvFrom:        phare.Spec.MicroService.EnvFrom,
-							Ports:          phare.Spec.MicroService.Ports,
-							Resources:      phare.Spec.MicroService.ResourceRequirements,
-							LivenessProbe:  phare.Spec.MicroService.LivenessProbe,
-							ReadinessProbe: phare.Spec.MicroService.ReadinessProbe,
-							StartupProbe:   phare.Spec.MicroService.StartupProbe,
-						},
-					},
+					Containers:     containers,
 					InitContainers: phare.Spec.MicroService.InitContainers,
 					Affinity:       phare.Spec.MicroService.Affinity,
 					Tolerations:    phare.Spec.MicroService.Tolerations,
@@ -139,16 +158,15 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 		},
 	}
 
-	// Set owner reference for the Deployment to be the Phare object
-	// https://book.kubebuilder.io/reference/using-finalizers.html#finalizer-owners.
+	// Set owner reference for the Deployment to be the Phare object.
 	if err := ctrl.SetControllerReference(phare, deployment, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed to set controller reference for Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 		return nil
 	}
 
 	// Add config volume only when toolchain config exists.
-	if phare.Spec.ToolChain != nil && phare.Spec.ToolChain.Config != nil && len(phare.Spec.ToolChain.Config) > 0 {
-		r.addConfigVolumeToDeployment(deployment, phare)
+	if phare.Spec.ToolChain != nil && len(phare.Spec.ToolChain.Config) > 0 {
+		addConfigVolumeToSpec(&deployment.Spec.Template, phare.Name+"-config")
 	}
 
 	// Set default file mode for Secret/ConfigMap volumes.
@@ -159,38 +177,29 @@ func (r *PhareReconciler) newDeployment(phare *pharev1beta1.Phare) *appsv1.Deplo
 	return deployment
 }
 
-func (r *PhareReconciler) addConfigVolumeToDeployment(deployment *appsv1.Deployment, phare *pharev1beta1.Phare) {
-	deploymentVolume := corev1.Volume{
+// addConfigVolumeToSpec mounts the managed ConfigMap into the first container of
+// the given pod template. Hash annotation injection is handled separately by the
+// reconcile functions so they can use the request context.
+func addConfigVolumeToSpec(template *corev1.PodTemplateSpec, configMapName string) {
+	vol := corev1.Volume{
 		Name: "config-volume",
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{
-					Name: phare.Name + "-config",
+					Name: configMapName,
 				},
 				DefaultMode: pointer.Int32(420),
 				Optional:    pointer.Bool(false),
 			},
 		},
 	}
-	configMapDataHash, err := r.hashConfigMapData(phare.Name+"-config", phare.Namespace)
-	if err != nil {
-		r.Log.Error(err, "Error hashing ConfigMap data", "ConfigMap.Namespace", phare.Namespace, "ConfigMap.Name", phare.Name+"-config")
-	}
+	template.Spec.Volumes = append([]corev1.Volume{vol}, template.Spec.Volumes...)
 
-	if deployment.Spec.Template.Annotations == nil {
-		deployment.Spec.Template.Annotations = make(map[string]string)
-	}
-	deployment.Spec.Template.Annotations["checksum/config-files"] = configMapDataHash
-
-	// Prepend the volume to the beginning of the Volumes slice
-	deployment.Spec.Template.Spec.Volumes = append([]corev1.Volume{deploymentVolume}, deployment.Spec.Template.Spec.Volumes...)
-
-	// Prepend the volume mount for the container
-	volumeMount := corev1.VolumeMount{
+	mount := corev1.VolumeMount{
 		Name:      "config-volume",
-		MountPath: "/path/to/mount",
+		MountPath: configVolumeMountPath,
 	}
-	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append([]corev1.VolumeMount{volumeMount}, deployment.Spec.Template.Spec.Containers[0].VolumeMounts...)
+	template.Spec.Containers[0].VolumeMounts = append([]corev1.VolumeMount{mount}, template.Spec.Containers[0].VolumeMounts...)
 }
 
 // UpdateVolume sets the default mode for Secret and ConfigMap volumes.

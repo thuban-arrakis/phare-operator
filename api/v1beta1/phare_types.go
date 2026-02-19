@@ -47,7 +47,6 @@ type MicroServiceSpec struct {
 	VolumeClaimTemplates []v1.PersistentVolumeClaim `json:"volumeClaimTemplates,omitempty"`
 	InitContainers       []v1.Container             `json:"initContainers,omitempty"`
 	ExtraContainers      []v1.Container             `json:"extraContainers,omitempty"`
-	deleteOptions        metav1.DeleteOptions       `json:"-"`
 	ResourceRequirements v1.ResourceRequirements    `json:"resourceRequirements,omitempty"` // TODO: Rename to Resources.
 	Command              []string                   `json:"command,omitempty"`
 	Args                 []string                   `json:"args,omitempty"`

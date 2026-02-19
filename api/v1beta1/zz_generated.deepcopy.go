@@ -328,7 +328,6 @@ func (in *MicroServiceSpec) DeepCopyInto(out *MicroServiceSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	in.deleteOptions.DeepCopyInto(&out.deleteOptions)
 	in.ResourceRequirements.DeepCopyInto(&out.ResourceRequirements)
 	if in.Command != nil {
 		in, out := &in.Command, &out.Command
