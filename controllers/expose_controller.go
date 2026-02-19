@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
@@ -146,7 +147,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	if !reflect.DeepEqual(existingGCPBackendPolicy.Object["spec"], desired.Object["spec"]) ||
+	if !specMatchesDesired(existingGCPBackendPolicy.Object["spec"], desired.Object["spec"]) ||
 		!stringMapsEqualNilEmpty(existingGCPBackendPolicy.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("GCPBackendPolicy does not match the desired configuration", "GCPBackendPolicy.Namespace", desired.GetNamespace(), "GCPBackendPolicy.Name", desired.GetName())
 
@@ -230,7 +231,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	if !reflect.DeepEqual(existingHealthCheckPolicy.Object["spec"], desired.Object["spec"]) ||
+	if !specMatchesDesired(existingHealthCheckPolicy.Object["spec"], desired.Object["spec"]) ||
 		!stringMapsEqualNilEmpty(existingHealthCheckPolicy.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("HealthCheckPolicy does not match the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
 
@@ -250,4 +251,23 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 	r.Log.Info("HealthCheckPolicy matches the desired configuration", "HealthCheckPolicy.Namespace", desired.GetNamespace(), "HealthCheckPolicy.Name", desired.GetName())
 
 	return ctrl.Result{}, nil
+}
+
+func specMatchesDesired(existingSpec, desiredSpec interface{}) bool {
+	return reflect.DeepEqual(canonicalizeSpec(existingSpec), canonicalizeSpec(desiredSpec))
+}
+
+func canonicalizeSpec(spec interface{}) interface{} {
+	if spec == nil {
+		return nil
+	}
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return spec
+	}
+	var out interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return spec
+	}
+	return out
 }
