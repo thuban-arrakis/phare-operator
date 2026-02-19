@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,6 +44,17 @@ func (r *PhareReconciler) reconcileStatefulSet(ctx context.Context, phare pharev
 			return createErr
 		}
 	} else if err == nil {
+		// Warn when the user changed VolumeClaimTemplates in the Phare spec: the field
+		// is immutable on StatefulSets and the change cannot be applied without a
+		// delete+recreate. Emit a Warning event so operators are not left guessing.
+		if !vctEqual(existingStatefulSet.Spec.VolumeClaimTemplates, desiredStatefulSet.Spec.VolumeClaimTemplates) {
+			r.Log.Info("VolumeClaimTemplates differ but are immutable after creation; changes ignored",
+				"StatefulSet.Namespace", existingStatefulSet.Namespace, "StatefulSet.Name", existingStatefulSet.Name)
+			r.Recorder.Eventf(&phare, corev1.EventTypeWarning, "ImmutableField",
+				"VolumeClaimTemplates for StatefulSet %s cannot be changed after creation; delete and recreate to apply new templates",
+				existingStatefulSet.Name)
+		}
+
 		// Keep a copy so we can patch only when something changed.
 		originalStatefulSet := existingStatefulSet.DeepCopy()
 		r.mergeStatefulSets(desiredStatefulSet, existingStatefulSet)
@@ -78,7 +90,11 @@ func (r *PhareReconciler) mergeStatefulSets(desiredStatefulSet, existingStateful
 	spec.Volumes = mergeVolumesRespectingMountedNames(spec.Volumes, desired.Volumes, spec.Containers, spec.InitContainers)
 	spec.Tolerations = desired.Tolerations
 	spec.Affinity = desired.Affinity
-	existingStatefulSet.Spec.VolumeClaimTemplates = desiredStatefulSet.Spec.VolumeClaimTemplates
+	// VolumeClaimTemplates are immutable after StatefulSet creation; never patch them.
+}
+
+func vctEqual(a, b []corev1.PersistentVolumeClaim) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 func (r *PhareReconciler) newStatefulSet(phare *pharev1beta1.Phare) *appsv1.StatefulSet {

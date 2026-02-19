@@ -8,10 +8,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestSpecMatchesDesired(t *testing.T) {
@@ -76,12 +78,7 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	gcp.SetName(phare.Name)
 	gcp.SetNamespace(phare.Namespace)
 	gcp.SetLabels(ownedLabels)
-	gcp.SetOwnerReferences([]metav1.OwnerReference{{
-		APIVersion: pharev1beta1.GroupVersion.String(),
-		Kind:       "Phare",
-		Name:       phare.Name,
-		UID:        phare.UID,
-	}})
+	gcp.SetOwnerReferences([]metav1.OwnerReference{controllerOwnerRef(phare)})
 	gcp.Object["spec"] = map[string]interface{}{"default": map[string]interface{}{}}
 
 	health := &unstructured.Unstructured{}
@@ -89,12 +86,7 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	health.SetName(phare.Name)
 	health.SetNamespace(phare.Namespace)
 	health.SetLabels(ownedLabels)
-	health.SetOwnerReferences([]metav1.OwnerReference{{
-		APIVersion: pharev1beta1.GroupVersion.String(),
-		Kind:       "Phare",
-		Name:       phare.Name,
-		UID:        phare.UID,
-	}})
+	health.SetOwnerReferences([]metav1.OwnerReference{controllerOwnerRef(phare)})
 	health.Object["spec"] = map[string]interface{}{"default": map[string]interface{}{}}
 
 	r := newTestReconciler(t, scheme, phare, gcp, health)
@@ -112,6 +104,72 @@ func TestReconcileCleansUpOwnedPoliciesWhenNotConfigured(t *testing.T) {
 	err = r.Get(context.Background(), client.ObjectKey{Name: phare.Name, Namespace: phare.Namespace}, health)
 	if err == nil || !errors.IsNotFound(err) {
 		t.Fatalf("expected HealthCheckPolicy to be deleted, got err=%v", err)
+	}
+}
+
+func TestCleanupPolicySkipsResourceNotOwnedByPhare(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+
+	// Matches naming/labels but not owner reference.
+	gcp := &unstructured.Unstructured{}
+	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	gcp.SetName(phare.Name)
+	gcp.SetNamespace(phare.Namespace)
+	gcp.SetLabels(map[string]string{"app": phare.Name, "app.kubernetes.io/created-by": "phare-controller"})
+	isController := true
+	gcp.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: pharev1beta1.GroupVersion.String(),
+		Kind:       "Phare",
+		Name:       "other",
+		UID:        "other-uid",
+		Controller: &isController,
+	}})
+	gcp.Object["spec"] = map[string]interface{}{"default": map[string]interface{}{}}
+
+	r := newTestReconciler(t, scheme, phare, gcp)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile should not fail: %v", err)
+	}
+	if err := r.Get(context.Background(), req.NamespacedName, gcp); err != nil {
+		t.Fatalf("expected non-owned policy to remain, got: %v", err)
+	}
+}
+
+func TestCleanupOwnedPoliciesEvenWhenLabelsDrifted(t *testing.T) {
+	scheme := testScheme(t)
+	phare := basePhare("demo", "default")
+
+	gcp := &unstructured.Unstructured{}
+	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
+	gcp.SetName(phare.Name)
+	gcp.SetNamespace(phare.Namespace)
+	gcp.SetOwnerReferences([]metav1.OwnerReference{controllerOwnerRef(phare)})
+	gcp.Object["spec"] = map[string]interface{}{"default": map[string]interface{}{}}
+
+	health := &unstructured.Unstructured{}
+	health.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "HealthCheckPolicy"})
+	health.SetName(phare.Name)
+	health.SetNamespace(phare.Namespace)
+	health.SetOwnerReferences([]metav1.OwnerReference{controllerOwnerRef(phare)})
+	health.Object["spec"] = map[string]interface{}{"default": map[string]interface{}{}}
+
+	r := newTestReconciler(t, scheme, phare, gcp, health)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: phare.Name, Namespace: phare.Namespace}}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("reconcile policy cleanup with drifted labels: %v", err)
+	}
+
+	err := r.Get(context.Background(), client.ObjectKey{Name: phare.Name, Namespace: phare.Namespace}, gcp)
+	if err == nil || !errors.IsNotFound(err) {
+		t.Fatalf("expected owned GCPBackendPolicy to be deleted despite label drift, got err=%v", err)
+	}
+	err = r.Get(context.Background(), client.ObjectKey{Name: phare.Name, Namespace: phare.Namespace}, health)
+	if err == nil || !errors.IsNotFound(err) {
+		t.Fatalf("expected owned HealthCheckPolicy to be deleted despite label drift, got err=%v", err)
 	}
 }
 
@@ -135,12 +193,7 @@ func TestReconcileGCPBackendPolicyRemovesStaleSpecFields(t *testing.T) {
 	gcp.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1", Kind: "GCPBackendPolicy"})
 	gcp.SetName(phare.Name)
 	gcp.SetNamespace(phare.Namespace)
-	gcp.SetOwnerReferences([]metav1.OwnerReference{{
-		APIVersion: pharev1beta1.GroupVersion.String(),
-		Kind:       "Phare",
-		Name:       phare.Name,
-		UID:        phare.UID,
-	}})
+	gcp.SetOwnerReferences([]metav1.OwnerReference{controllerOwnerRef(phare)})
 	gcp.SetLabels(map[string]string{"stale": "label"})
 	gcp.Object["spec"] = map[string]interface{}{
 		"default": map[string]interface{}{
@@ -186,5 +239,51 @@ func TestReconcileGCPBackendPolicyRemovesStaleSpecFields(t *testing.T) {
 	}
 	if current.GetLabels()["stale"] != "" {
 		t.Fatalf("expected stale labels to be removed, got %#v", current.GetLabels())
+	}
+}
+
+// emptyScheme has no types registered so SetControllerReference will fail,
+// exercising the nil-return paths in the desired* builder functions.
+func emptyScheme() *runtime.Scheme { return runtime.NewScheme() }
+
+func TestDesiredHttpRouteReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		HTTPRoute: &pharev1beta1.HTTPRouteSpec{},
+	}
+	if got := r.desiredHttpRoute(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
+	}
+}
+
+func TestDesiredGCPBackendPolicyReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		GCPBackendPolicy: &pharev1beta1.GCPBackendPolicySpec{},
+	}
+	if got := r.desiredGCPBackendPolicy(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
+	}
+}
+
+func TestDesiredHealthCheckPolicyReturnsNilOnSchemeError(t *testing.T) {
+	r := &PhareReconciler{
+		Client: fake.NewClientBuilder().WithScheme(emptyScheme()).Build(),
+		Scheme: emptyScheme(),
+	}
+	phare := basePhare("demo", "default")
+	phare.Spec.ToolChain = &pharev1beta1.ToolChainSpec{
+		HealthCheckPolicy: &pharev1beta1.HealthCheckPolicySpec{},
+	}
+	if got := r.desiredHealthCheckPolicy(phare); got != nil {
+		t.Fatalf("expected nil on SetControllerReference failure, got %v", got)
 	}
 }

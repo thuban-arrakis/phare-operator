@@ -118,3 +118,7 @@ func volumeExists(items []corev1.Volume, name string) bool {
 	}
 	return false
 }
+
+func controllerOwnerRef(phare *pharev1beta1.Phare) metav1.OwnerReference {
+	return *metav1.NewControllerRef(phare, pharev1beta1.GroupVersion.WithKind("Phare"))
+}

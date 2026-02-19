@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
@@ -20,6 +21,9 @@ import (
 func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Request, phare pharev1beta1.Phare) error {
 	existingHttpRoute := &gatewayv1beta1.HTTPRoute{}
 	desired := r.desiredHttpRoute(&phare)
+	if desired == nil {
+		return fmt.Errorf("failed to build HTTPRoute for %s/%s", phare.Namespace, phare.Name)
+	}
 	err := r.Get(ctx, req.NamespacedName, existingHttpRoute)
 
 	if err != nil {
@@ -85,7 +89,7 @@ func (r *PhareReconciler) desiredHttpRoute(phare *pharev1beta1.Phare) *gatewayv1
 	// Set the controller reference so that we can correlate the HTTPRoute to the Phare resource
 	if err := ctrl.SetControllerReference(phare, httpRoute, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed to set controller reference for HTTPRoute")
-		return httpRoute
+		return nil
 	}
 	return httpRoute
 }
@@ -103,7 +107,7 @@ func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *un
 	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.GCPBackendPolicy)
 	if err != nil {
 		r.Log.Error(err, "Failed to convert GCPBackendPolicy spec to unstructured map")
-		spec = map[string]interface{}{}
+		return nil
 	}
 
 	gcpBackendPolicy := &unstructured.Unstructured{
@@ -120,7 +124,7 @@ func (r *PhareReconciler) desiredGCPBackendPolicy(phare *pharev1beta1.Phare) *un
 	}
 	if err := ctrl.SetControllerReference(phare, gcpBackendPolicy, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed to set controller reference for GCPBackendPolicy")
-		return gcpBackendPolicy
+		return nil
 	}
 	return gcpBackendPolicy
 }
@@ -136,7 +140,7 @@ func (r *PhareReconciler) reconcileGCPBackendPolicy(ctx context.Context, req ctr
 
 	desired := r.desiredGCPBackendPolicy(&phare)
 	if desired == nil {
-		return nil
+		return fmt.Errorf("failed to build GCPBackendPolicy for %s/%s", phare.Namespace, phare.Name)
 	}
 	err := r.Get(ctx, req.NamespacedName, existingGCPBackendPolicy)
 
@@ -186,7 +190,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(phare.Spec.ToolChain.HealthCheckPolicy)
 	if err != nil {
 		r.Log.Error(err, "Failed to convert HealthCheckPolicy spec to unstructured map")
-		spec = map[string]interface{}{}
+		return nil
 	}
 
 	// Build HealthCheckPolicy from the Phare spec.
@@ -204,7 +208,7 @@ func (r *PhareReconciler) desiredHealthCheckPolicy(phare *pharev1beta1.Phare) *u
 	}
 	if err := ctrl.SetControllerReference(phare, healthCheckPolicy, r.Scheme); err != nil {
 		r.Log.Error(err, "Failed to set controller reference for HealthCheckPolicy")
-		return healthCheckPolicy
+		return nil
 	}
 	return healthCheckPolicy
 }
@@ -220,7 +224,7 @@ func (r *PhareReconciler) reconcileHealthCheckPolicy(ctx context.Context, req ct
 
 	desired := r.desiredHealthCheckPolicy(&phare)
 	if desired == nil {
-		return nil
+		return fmt.Errorf("failed to build HealthCheckPolicy for %s/%s", phare.Namespace, phare.Name)
 	}
 	err := r.Get(ctx, req.NamespacedName, existingHealthCheckPolicy)
 
