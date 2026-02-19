@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -134,20 +135,8 @@ func (r *PhareReconciler) desiredService(phare *pharev1beta1.Phare) *corev1.Serv
 // serviceSpecsDiffer compares managed fields after applying preservation rules.
 func serviceSpecsDiffer(existing, desired *corev1.ServiceSpec, preserveNodePort bool) bool {
 	normalizedDesired := mergeServiceSpecPreservingImmutable(*existing, *desired, preserveNodePort)
-
-	if !reflect.DeepEqual(existing.Ports, normalizedDesired.Ports) {
-		return true
-	}
-
-	if !reflect.DeepEqual(existing.Selector, normalizedDesired.Selector) {
-		return true
-	}
-
-	if !reflect.DeepEqual(existing.Type, normalizedDesired.Type) {
-		return true
-	}
-
-	return false
+	normalizedDesired = normalizeServiceSpecForDiff(*existing, normalizedDesired)
+	return !reflect.DeepEqual(canonicalizeServiceSpec(*existing), canonicalizeServiceSpec(normalizedDesired))
 }
 
 func mergeServiceSpecPreservingImmutable(existing, desired corev1.ServiceSpec, preserveNodePort bool) corev1.ServiceSpec {
@@ -209,6 +198,53 @@ func serviceAnnotationsFromPhare(in map[string]string) map[string]string {
 	delete(out, reallocateNodePortAnnotation)
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func normalizeServiceSpecForDiff(existing, desired corev1.ServiceSpec) corev1.ServiceSpec {
+	out := *desired.DeepCopy()
+
+	// Treat omitted optional fields as "keep current value" for drift checks.
+	if out.ExternalIPs == nil {
+		out.ExternalIPs = append([]string(nil), existing.ExternalIPs...)
+	}
+	if out.LoadBalancerSourceRanges == nil {
+		out.LoadBalancerSourceRanges = append([]string(nil), existing.LoadBalancerSourceRanges...)
+	}
+	if out.SessionAffinityConfig == nil {
+		out.SessionAffinityConfig = existing.SessionAffinityConfig
+	}
+	if out.InternalTrafficPolicy == nil {
+		out.InternalTrafficPolicy = existing.InternalTrafficPolicy
+	}
+	if out.AllocateLoadBalancerNodePorts == nil {
+		out.AllocateLoadBalancerNodePorts = existing.AllocateLoadBalancerNodePorts
+	}
+	if out.SessionAffinity == "" {
+		out.SessionAffinity = existing.SessionAffinity
+	}
+	if out.ExternalTrafficPolicy == "" {
+		out.ExternalTrafficPolicy = existing.ExternalTrafficPolicy
+	}
+	if out.LoadBalancerIP == "" {
+		out.LoadBalancerIP = existing.LoadBalancerIP
+	}
+	if out.ExternalName == "" {
+		out.ExternalName = existing.ExternalName
+	}
+
+	return out
+}
+
+func canonicalizeServiceSpec(spec corev1.ServiceSpec) interface{} {
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return spec
+	}
+	var out interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return spec
 	}
 	return out
 }

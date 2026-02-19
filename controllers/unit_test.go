@@ -142,6 +142,14 @@ func TestServiceSpecsDiffer(t *testing.T) {
 	if !serviceSpecsDiffer(existingWithPort, desiredWithDifferentPort, false) {
 		t.Fatalf("expected nodePort difference to be detected when preservation is disabled")
 	}
+
+	existingSession := base.DeepCopy()
+	existingSession.SessionAffinity = corev1.ServiceAffinityNone
+	desiredSession := base.DeepCopy()
+	desiredSession.SessionAffinity = corev1.ServiceAffinityClientIP
+	if !serviceSpecsDiffer(existingSession, desiredSession, true) {
+		t.Fatalf("expected sessionAffinity change to be detected")
+	}
 }
 
 func TestMergeStringMaps(t *testing.T) {

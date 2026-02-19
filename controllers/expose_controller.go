@@ -34,7 +34,7 @@ func (r *PhareReconciler) reconcileHttpRoute(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if !reflect.DeepEqual(existingHttpRoute.Spec, desired.Spec) ||
+	if !specMatchesDesired(existingHttpRoute.Spec, desired.Spec) ||
 		!stringMapsEqualNilEmpty(existingHttpRoute.GetLabels(), desired.GetLabels()) {
 		r.Log.Info("HTTPRoute does not match the desired configuration", "HTTPRoute.Namespace", desired.Namespace, "HTTPRoute.Name", desired.Name)
 
