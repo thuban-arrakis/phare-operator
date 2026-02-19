@@ -176,7 +176,10 @@ func defaultLabelPredicate(labelKey, labelValue string) predicate.Predicate {
 			return e.Object.GetLabels()[labelKey] == labelValue
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectNew.GetLabels()[labelKey] == labelValue
+			oldMatch := e.ObjectOld != nil && e.ObjectOld.GetLabels()[labelKey] == labelValue
+			newMatch := e.ObjectNew != nil && e.ObjectNew.GetLabels()[labelKey] == labelValue
+			// Reconcile on transitions away from the managed label as well.
+			return oldMatch || newMatch
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return e.Object.GetLabels()[labelKey] == labelValue

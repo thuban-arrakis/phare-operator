@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	pharev1beta1 "github.com/localcorp/phare-controller/api/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -58,5 +60,23 @@ func TestFetchPhareResourceFound(t *testing.T) {
 	}
 	if phare.Name != "app" {
 		t.Fatalf("unexpected object loaded: got %q", phare.Name)
+	}
+}
+
+func TestDefaultLabelPredicateUpdateTriggersOnLabelRemoval(t *testing.T) {
+	pred := defaultLabelPredicate("app.kubernetes.io/created-by", "phare-controller")
+
+	oldObj := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cfg",
+			Namespace: "default",
+			Labels:    map[string]string{"app.kubernetes.io/created-by": "phare-controller"},
+		},
+	}
+	newObj := oldObj.DeepCopy()
+	newObj.Labels = map[string]string{}
+
+	if !pred.Update(event.UpdateEvent{ObjectOld: oldObj, ObjectNew: newObj}) {
+		t.Fatalf("expected update predicate to trigger when managed label is removed")
 	}
 }
